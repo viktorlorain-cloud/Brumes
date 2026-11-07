@@ -7,7 +7,7 @@ Version actuelle : prototype jouable à 2-4 joueurs, en ligne (chacun sur son t�
 ## Jouer
 
 L'appli est publiée automatiquement sur GitHub Pages à chaque modification de la branche `main` :
-https://viktorlorain-cloud.github.io/brumes/
+https://viktorlorain-cloud.github.io/Brumes/
 
 - **Créer une partie en ligne** : donne un code de 4 lettres à envoyer aux amis.
 - **Rejoindre** : saisir le code (ou ouvrir le lien d'invitation).
