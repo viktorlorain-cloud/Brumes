@@ -6,6 +6,9 @@ Version actuelle : prototype jouable à 2-4 joueurs, en ligne (chacun sur son t�
 
 ## Jouer
 
+**Lien à partager pour installer le jeu : https://viktorlorain-cloud.github.io/Brumes/telecharger/**
+La page détecte l'appareil : APK sur Android, ajout à l'écran d'accueil sur iPhone, jeu dans le navigateur (et QR code) sur ordinateur.
+
 L'appli est publiée automatiquement sur GitHub Pages à chaque modification de la branche `main` :
 https://viktorlorain-cloud.github.io/Brumes/
 

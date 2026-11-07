@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Télécharger Brumes</title>
+<meta name="description" content="Brumes, le jeu de colonisation dans la brume. Installez-le sur Android, iPhone ou jouez dans le navigateur.">
+<meta name="theme-color" content="#0e2533">
+<meta property="og:title" content="Brumes · le jeu">
+<meta property="og:description" content="Explorez l'île cachée par la brume avec vos amis. Android, iPhone ou navigateur.">
+<meta property="og:image" content="https://viktorlorain-cloud.github.io/Brumes/icons/icon-512.png">
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+/* Page d'accueil unique : détecte l'appareil et met en avant la bonne façon d'installer le jeu. */
+:root {
+  --sea: #0e2533;
+  --panel: #10232f;
+  --line: rgba(186, 214, 230, 0.16);
+  --ink: #eef4f7;
+  --ink-soft: #9fb6c3;
+  --lamp: #ffcf6b;
+  --display: "Fraunces", Georgia, "Times New Roman", serif;
+  --body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--sea); color: var(--ink); font-family: var(--body); }
+body { min-height: 100%; background: radial-gradient(ellipse at 50% -10%, rgba(255, 207, 107, 0.18), transparent 55%), var(--sea); }
+main { max-width: 460px; margin: 0 auto; padding: calc(28px + env(safe-area-inset-top)) 18px calc(32px + env(safe-area-inset-bottom)); display: grid; gap: 18px; }
+header { display: grid; justify-items: center; gap: 10px; text-align: center; }
+header img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 12px 36px rgba(0,0,0,0.45); }
+h1 { font-family: var(--display); font-weight: 800; font-size: 46px; line-height: 1; margin: 0; }
+header p { margin: 0; color: var(--ink-soft); font-size: 15px; line-height: 1.45; max-width: 34ch; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; gap: 12px; }
+.card h2 { font-family: var(--display); font-weight: 600; font-size: 21px; margin: 0; text-wrap: balance; }
+.card.main { border-color: rgba(255, 207, 107, 0.5); }
+.eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--lamp); }
+ol { margin: 0; padding-left: 20px; display: grid; gap: 7px; font-size: 14px; line-height: 1.45; color: var(--ink-soft); }
+ol b { color: var(--ink); }
+.btn { display: block; text-align: center; text-decoration: none; font-weight: 800; font-size: 16px; padding: 14px; border-radius: 12px; background: var(--lamp); color: #1b2a33; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 600; font-size: 15px; }
+.btn:focus-visible { outline: 2px solid var(--lamp); outline-offset: 3px; }
+.meta { font-size: 12px; color: var(--ink-soft); text-align: center; font-variant-numeric: tabular-nums; }
+.qr { display: grid; grid-template-columns: 132px 1fr; gap: 14px; align-items: center; }
+.qr img { width: 132px; height: 132px; border-radius: 12px; background: #f6efe0; }
+.qr p { margin: 0; font-size: 14px; color: var(--ink-soft); line-height: 1.45; }
+details { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px 18px; }
+details summary { cursor: pointer; font-weight: 600; }
+details .card { background: transparent; border: 0; padding: 12px 0 0; }
+.share { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.share code { font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(255,255,255,0.05); padding: 10px; border-radius: 10px; }
+.share button { font: 600 14px var(--body); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="../icons/icon-512.png" alt="">
+    <h1>Brumes</h1>
+    <p>Explorez une île cachée par la brume, posez vos camps et jouez avec vos amis, de 2 à 6.</p>
+  </header>
+
+  <section class="card" id="android" data-device="android">
+    <span class="eyebrow">Android</span>
+    <h2>Installer l'appli</h2>
+    <a class="btn" id="apkLink" href="https://github.com/viktorlorain-cloud/Brumes/releases/latest/download/Brumes.apk">Télécharger Brumes pour Android</a>
+    <div class="meta" id="apkMeta">Dernière version, environ 6 Mo</div>
+    <ol>
+      <li>Ouvrez le fichier <b>Brumes.apk</b> une fois téléchargé.</li>
+      <li>Si Android le demande, touchez <b>Paramètres</b> puis <b>Autoriser cette source</b>.</li>
+      <li>Si Play Protect affiche « appli inconnue », choisissez <b>Installer quand même</b>.</li>
+      <li>Pour mettre à jour plus tard, revenez sur cette page et réinstallez : la nouvelle version remplace l'ancienne.</li>
+    </ol>
+  </section>
+
+  <section class="card" id="ios" data-device="ios">
+    <span class="eyebrow">iPhone et iPad</span>
+    <h2>Ajouter Brumes à l'écran d'accueil</h2>
+    <a class="btn" href="../">Ouvrir le jeu</a>
+    <ol>
+      <li>Ouvrez cette page dans <b>Safari</b>.</li>
+      <li>Touchez <b>Partager</b> (le carré avec une flèche).</li>
+      <li>Choisissez <b>Sur l'écran d'accueil</b>, puis <b>Ajouter</b>.</li>
+      <li>Lancez Brumes depuis son icône : il s'ouvre en plein écran, comme une appli.</li>
+    </ol>
+  </section>
+
+  <section class="card" id="desktop" data-device="desktop">
+    <span class="eyebrow">Ordinateur</span>
+    <h2>Jouer dans le navigateur</h2>
+    <a class="btn" href="../">Jouer maintenant</a>
+    <div class="qr">
+      <img src="qr.svg" alt="QR code vers cette page">
+      <p>Pour l'installer sur votre téléphone, scannez ce code avec l'appareil photo.</p>
+    </div>
+  </section>
+
+  <details id="others">
+    <summary>Autre appareil ?</summary>
+    <div id="othersBody"></div>
+  </details>
+
+  <section class="card">
+    <h2>Partager ce lien</h2>
+    <div class="share"><code id="shareUrl">https://viktorlorain-cloud.github.io/Brumes/telecharger/</code><button type="button" id="shareBtn">Partager</button></div>
+    <p class="meta">Le même lien fonctionne pour tout le monde : chaque appareil voit la bonne façon d'installer le jeu. Android, iPhone et ordinateur jouent ensemble dans les mêmes parties.</p>
+  </section>
+</main>
+<script>
+(function () {
+  var ua = navigator.userAgent || '';
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  var device = /Android/i.test(ua) ? 'android' : isIOS ? 'ios' : 'desktop';
+  // La bonne carte en premier, les autres rangées sous « Autre appareil ? »
+  var main = document.querySelector('main'), header = document.querySelector('header'), others = document.getElementById('othersBody');
+  document.querySelectorAll('[data-device]').forEach(function (el) {
+    if (el.dataset.device === device) { el.classList.add('main'); main.insertBefore(el, header.nextSibling); }
+    else others.appendChild(el);
+  });
+
+  // Version et taille de la dernière appli Android (si GitHub répond)
+  fetch('https://api.github.com/repos/viktorlorain-cloud/Brumes/releases/latest')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel) return;
+      var apk = (rel.assets || []).filter(function (a) { return /\.apk$/.test(a.name); })[0];
+      if (!apk) return;
+      var mo = (apk.size / 1048576).toFixed(1).replace('.', ',');
+      var date = new Date(rel.published_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+      document.getElementById('apkMeta').textContent = 'Version ' + rel.tag_name.replace(/^v/, '') + ' · ' + mo + ' Mo · mise à jour le ' + date;
+    })
+    .catch(function () {});
+
+  var url = 'https://viktorlorain-cloud.github.io/Brumes/telecharger/';
+  document.getElementById('shareBtn').addEventListener('click', function () {
+    var btn = this;
+    if (navigator.share) { navigator.share({ title: 'Brumes', text: 'Viens jouer à Brumes avec moi', url: url }).catch(function () {}); return; }
+    if (navigator.clipboard) navigator.clipboard.writeText(url).then(function () { btn.textContent = 'Copié'; setTimeout(function () { btn.textContent = 'Partager'; }, 1800); });
+  });
+})();
+</script>
+</body>
+</html>
