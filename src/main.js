@@ -207,7 +207,13 @@ $('btnAgain').onclick = () => { leave(); store.del('brumes:last'); store.del('br
 /* ---------- Salons en ligne ---------- */
 const ALPH = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const newCode = () => Array.from({ length: 4 }, () => ALPH[Math.floor(Math.random() * ALPH.length)]).join('');
-function inviteUrl(code) { const u = new URL(location.href); u.search = `?partie=${code}`; u.hash = ''; return u.toString(); }
+const WEB_URL = 'https://viktorlorain-cloud.github.io/Brumes/';
+const APK_URL = 'https://github.com/viktorlorain-cloud/Brumes/releases/latest/download/Brumes.apk';
+const IN_APP = !!window.Capacitor;
+function inviteUrl(code) {
+  const u = new URL(IN_APP || !/^https?:$/.test(location.protocol) ? WEB_URL : location.href);
+  u.search = `?partie=${code}`; u.hash = ''; return u.toString();
+}
 async function shareInvite(code) {
   const url = inviteUrl(code), text = `Rejoins ma partie de Brumes : code ${code}`;
   try { if (navigator.share) { await navigator.share({ title: 'Brumes', text, url }); return; } } catch { /* partage annulé */ }
@@ -386,8 +392,9 @@ let installEvt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('btnInstall').style.display = ''; });
 $('btnInstall').onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => null); installEvt = null; $('btnInstall').style.display = 'none'; };
 const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-if (standalone) $('installHelp').style.display = 'none';
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('./sw.js').catch(() => null);
+if (standalone || IN_APP) $('installHelp').style.display = 'none';
+if (!IN_APP && /Android/i.test(navigator.userAgent)) { $('btnApk').href = APK_URL; $('btnApk').style.display = ''; }
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !IN_APP) navigator.serviceWorker.register('./sw.js').catch(() => null);
 
 /* ---------- Démarrage ---------- */
 initView($('scene'));

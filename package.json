@@ -10,9 +10,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.45.4",
-    "three": "0.160.0"
+    "three": "0.160.0",
+    "@capacitor/android": "6.1.2",
+    "@capacitor/core": "6.1.2"
   },
   "devDependencies": {
-    "esbuild": "0.24.0"
+    "esbuild": "0.24.0",
+    "@capacitor/cli": "6.1.2"
   }
 }

@@ -1,0 +1,6 @@
+{
+  "appId": "io.github.viktorlorain.brumes",
+  "appName": "Brumes",
+  "webDir": "dist",
+  "android": { "backgroundColor": "#0e2533" }
+}

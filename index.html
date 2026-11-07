@@ -122,6 +122,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 #lobbySeats li small { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--panel-line); border-radius: 999px; padding: 1px 7px; }
 #lobbySeats li small.off { color: #ffb4a8; }
 #lobbySeats li.free { color: var(--ink-soft); background: transparent; border: 1px dashed var(--panel-line); }
+.install a.big { display: block; }
 .install { font-size: 12px; color: var(--ink-soft); line-height: 1.45; border-top: 1px solid var(--panel-line); padding-top: 12px; }
 @media (prefers-reduced-motion: reduce) { .toast, .card.bump { animation: none; } }
 </style>
@@ -183,6 +184,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
       </ul>
     </details>
     <div class="install" id="installHelp">
+      <a class="big" id="btnApk" href="#" style="display:none;margin-bottom:8px;text-align:center;text-decoration:none">Télécharger l'appli Android</a>
       <button class="big" id="btnInstall" type="button" style="display:none;width:100%;margin-bottom:8px">Installer l'appli</button>
       Pour l'avoir comme une appli : sur iPhone, Safari › Partager › « Sur l'écran d'accueil ». Sur Android, Chrome › ⋮ › « Installer l'application ».
     </div>

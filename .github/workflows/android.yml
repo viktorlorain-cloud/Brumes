@@ -1,0 +1,49 @@
+name: Appli Android
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: android
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npm run build
+      - name: Projet Android
+        run: npx cap add android
+      - name: Icônes et écran de démarrage
+        continue-on-error: true
+        run: npx --yes @capacitor/assets@3.0.5 generate --android --iconBackgroundColor "#0e2533" --iconBackgroundColorDark "#0e2533" --splashBackgroundColor "#0e2533" --splashBackgroundColorDark "#0e2533"
+      - run: npx cap sync android
+      - name: Portrait, numéro de version, clé de signature
+        run: |
+          sed -i 's/android:name=".MainActivity"/android:name=".MainActivity"\n            android:screenOrientation="portrait"/' android/app/src/main/AndroidManifest.xml
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"0.1.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "versionCode\|versionName" android/app/build.gradle
+          mkdir -p ~/.android && cp android-signing/debug.keystore ~/.android/debug.keystore
+      - name: Construction de l'APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk Brumes.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Brumes 0.1.${{ github.run_number }}
+          files: Brumes.apk
+          make_latest: true
+          body: |
+            Appli Android de Brumes. Téléchargez Brumes.apk sur le téléphone, ouvrez-le et autorisez l'installation.
+            Lien permanent vers la dernière version : https://github.com/viktorlorain-cloud/Brumes/releases/latest/download/Brumes.apk
