@@ -50,6 +50,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--lamp); outl
 #players.compact .menuBtn { grid-column: 4; grid-row: 1 / span 2; height: auto; }
 #players.compact .pchip { padding: 4px 5px; font-size: 11px; gap: 4px; min-width: 0; }
 #players.compact .pchip b { overflow: hidden; text-overflow: ellipsis; }
+#players.compact .pchip.me b { text-decoration: underline; text-decoration-color: var(--lamp); text-underline-offset: 3px; }
 #players.compact .pchip small { display: none; }
 .pchip small { color: var(--ink-soft); }
 .menuBtn { margin-left: auto; flex: none; border: 1px solid var(--panel-line); background: rgba(255,255,255,0.06); border-radius: 10px; width: 36px; height: 30px; font-size: 18px; line-height: 1; }
@@ -187,6 +188,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
         <li>Un camp au contact du Phare échange à 2 contre 1 la ressource de la marée en cours.</li>
         <li>Sur un 7, le Rôdeur bloque une tuile et vole une carte. Au-delà de 7 cartes, on en défausse la moitié.</li>
         <li>De 2 à 4 joueurs : île de 19 tuiles. À 5 ou 6 : grande île de 31 tuiles, 11 ports et une banque plus fournie.</li>
+        <li>En ligne à 5 ou 6, chacun peut construire pendant le tour des autres, une fois les dés lancés (sans échanger). On ne gagne qu'à son propre tour.</li>
       </ul>
     </details>
     <div class="install" id="installHelp">

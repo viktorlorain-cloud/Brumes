@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions } from './view.js';
 import { openRoom } from './net.js';
@@ -50,6 +50,8 @@ function myPid() {
   return st.players.findIndex(p => p.clientId === ME.id);
 }
 const isMyTurn = () => { const st = S(); return !!st && st.phase !== 'over' && myPid() === st.current && myPid() >= 0; };
+/* Construction pendant le tour d'un autre joueur (parties en ligne à 5-6) */
+const canQuickBuild = () => { const st = S(); return !!st && session.mode === 'online' && canBuildOutOfTurn(st, myPid()); };
 
 /* ---------- Affichage du HUD ---------- */
 function renderHUD(bumped = []) {
@@ -59,7 +61,8 @@ function renderHUD(bumped = []) {
   $('players').classList.toggle('compact', st.players.length > 4);
   $('players').innerHTML = st.players.map(q => {
     const away = online && q.clientId && session.peers && !session.peers.has(q.clientId);
-    return `<div class="pchip ${q.id === st.current ? 'active' : ''} ${away ? 'away' : ''}"><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}${online && q.id === me ? ' (vous)' : ''}</b><span>${vp(q)} pts</span><small>${total(q)} 🂠</small></div>`;
+    const isMe = online && q.id === me, compact = st.players.length > 4;
+    return `<div class="pchip ${q.id === st.current ? 'active' : ''} ${away ? 'away' : ''} ${isMe ? 'me' : ''}"><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}${isMe && !compact ? ' (vous)' : ''}</b><span>${vp(q)} pts</span><small>${total(q)} 🂠</small></div>`;
   }).join('') + `<button type="button" class="menuBtn" id="btnMenu" aria-label="Menu de la partie">⋯</button>`;
   $('btnMenu').onclick = openMenu;
   $('tideNow').querySelector('strong').textContent = st.phase === 'setup' ? "Après l'installation" : tideTitle(st.tide);
@@ -69,10 +72,11 @@ function renderHUD(bumped = []) {
       `<div class="card ${bumped.includes('fortune') ? 'bump' : ''}"><span class="ic" style="color:var(--lamp)">✦</span><span class="n">${mine.fortune}</span><span class="lb">Fortune</span></div>`;
   } else $('hand').innerHTML = '<div class="spect">Vous regardez la partie</div>';
   const mt = isMyTurn() && !waiting;
+  const mb = (mt || canQuickBuild()) && !waiting;
   $('btnRoll').disabled = !(mt && st.phase === 'roll');
-  $('btnSentier').disabled = !(mt && canBuild(st, me, 'sentier'));
-  $('btnCamp').disabled = !(mt && canBuild(st, me, 'camp'));
-  $('btnBastion').disabled = !(mt && canBuild(st, me, 'bastion'));
+  $('btnSentier').disabled = !(mb && canBuild(st, me, 'sentier'));
+  $('btnCamp').disabled = !(mb && canBuild(st, me, 'camp'));
+  $('btnBastion').disabled = !(mb && canBuild(st, me, 'bastion'));
   $('btnBank').disabled = !(mt && st.phase === 'main');
   $('btnEnd').disabled = !(mt && st.phase === 'main');
   $('btnSentier').querySelector('.co').textContent = st.tide?.type === 'chantier-sentier' ? '🪵 seulement' : '🪵🪨';
@@ -87,8 +91,14 @@ function refreshInteraction() {
   const me = myPid(), cur = st.players[st.current];
   if (st.phase === 'over') { clearMarkers(); hint(''); return; }
   if (!isMyTurn() || waiting) {
+    if (!waiting && canQuickBuild() && uiMode && canBuild(st, me, uiMode)) {
+      if (uiMode === 'sentier') { showMarkers('edge', legalRoads(st, me)); hint('Hors tour : touchez un emplacement pour tracer le sentier'); }
+      else if (uiMode === 'camp') { showMarkers('vertex', legalCamps(st, me)); hint('Hors tour : touchez une intersection pour installer le camp'); }
+      else { showMarkers('vertex', legalBastions(st, me)); hint('Hors tour : touchez un de vos camps pour en faire un bastion'); }
+      return;
+    }
     clearMarkers(); uiMode = null;
-    hint(waiting ? 'Envoi…' : session.mode === 'online' ? `Au tour de ${cur.nom}` : '');
+    hint(waiting ? 'Envoi…' : session.mode === 'online' ? `Au tour de ${cur.nom}${canQuickBuild() ? ' · vous pouvez construire' : ''}` : '');
     return;
   }
   if (st.phase === 'setup') {
@@ -164,7 +174,14 @@ function hostApply(pid, action) {
 }
 
 onTap((kind, id) => {
-  const st = S(); if (!st || !isMyTurn() || waiting) return;
+  const st = S(); if (!st || waiting) return;
+  if (!isMyTurn()) {
+    if (!canQuickBuild()) return;
+    if (uiMode === 'sentier' && kind === 'edge') return act({ t: 'road', e: id });
+    if (uiMode === 'camp' && kind === 'vertex') return act({ t: 'camp', v: id });
+    if (uiMode === 'bastion' && kind === 'vertex') return act({ t: 'bastion', v: id });
+    return;
+  }
   if (st.phase === 'setup') return act(kind === 'vertex' ? { t: 'camp', v: id } : { t: 'road', e: id });
   if (st.phase === 'robber' && kind === 'tile') return act({ t: 'robber', tile: id });
   if (uiMode === 'sentier' && kind === 'edge') return act({ t: 'road', e: id });
@@ -284,13 +301,13 @@ function renderLobby() {
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
   $('btnLaunch').disabled = l.seats.length < 2;
-  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}.`) : "En attente que l'hôte lance la partie…";
+  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île, avec construction pendant le tour des autres' : ''}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
 $('btnLaunch').onclick = () => {
   const l = session.lobby; if (!session.isHost || l.seats.length < 2) return;
-  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id });
+  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, quickBuild: l.seats.length > 4 });
   session.lobby = null; session.state = st; st.seq = 1;
   session.room.send({ type: 'state', state: st, events: [] });
   hideOverlays(); resetCamera(); onNewState(st, [], false);
@@ -405,4 +422,4 @@ goHome();
 if (params.get('partie')) $('codeInput').focus();
 
 /* Accès pour les tests automatiques */
-window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act };
+window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads };

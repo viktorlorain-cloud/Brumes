@@ -145,11 +145,12 @@ export function generateIsland(seed, big = false) {
 
 /* ---------- Création d'une partie ---------- */
 /* seats : [{ clientId, name }] dans l'ordre des places */
-export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null }) {
+/* quickBuild : les joueurs peuvent construire pendant le tour des autres (parties en ligne à 5-6) */
+export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false }) {
   const n = seats.length;
   const isl = generateIsland(seed, n > 4);
   const S = {
-    v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, ...isl,
+    v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, quickBuild, ...isl,
     players: seats.map((s, i) => ({ id: i, clientId: s.clientId || null, nom: s.name || PLAYER_DEFS[i].nom, col: PLAYER_DEFS[i].col,
       res: Object.fromEntries(RES.map(r => [r, 0])), fortune: 0, built: { sentier: 0, camp: 0, bastion: 0 } })),
     bank: Object.fromEntries(RES.map(r => [r, n > 4 ? 24 : 19])),
@@ -204,9 +205,11 @@ export function rateFor(S, pid, r) {
   return rate;
 }
 
+/* Construction hors tour : seulement pendant la phase principale du joueur actif */
+export const canBuildOutOfTurn = (S, pid) => !!S.quickBuild && S.phase === 'main' && pid !== S.current && pid >= 0;
 export function canBuild(S, pid, kind) {
   const p = S.players[pid];
-  if (S.phase !== 'main' || S.current !== pid) return false;
+  if (!p || S.phase !== 'main' || (S.current !== pid && !canBuildOutOfTurn(S, pid))) return false;
   if (!canPay(p, costOf(S, kind)) || p.built[kind] >= LIMITS[kind]) return false;
   if (kind === 'sentier') return legalRoads(S, pid).length > 0;
   if (kind === 'camp') return legalCamps(S, pid).length > 0;
@@ -248,8 +251,9 @@ function produce(S, n) {
   for (const p of S.players) if (!received.has(p.id)) { p.fortune++; fortune.push(p.id); }
   return { gains: gains.filter(g => !blocked.includes(g.res)), fortune, blocked };
 }
+/* On ne gagne que pendant son propre tour : un seuil atteint hors tour est validé au début de son tour */
 function checkWin(S, p, ev) {
-  if (vp(p) >= S.win) { S.phase = 'over'; S.winner = p.id; ev.push({ k: 'win', pid: p.id }); }
+  if (p.id === S.current && vp(p) >= S.win) { S.phase = 'over'; S.winner = p.id; ev.push({ k: 'win', pid: p.id }); }
 }
 
 /* ---------- Actions ----------
@@ -260,8 +264,11 @@ export function applyAction(S, pid, a) {
   const ev = [];
   const fail = error => ({ ok: false, error, events: [] });
   if (S.phase === 'over') return fail('La partie est terminée.');
-  if (pid !== S.current) return fail("Ce n'est pas votre tour.");
   const p = S.players[pid];
+  if (!p) return fail('Joueur inconnu.');
+  const outOfTurn = pid !== S.current;
+  if (outOfTurn && !(['road', 'camp', 'bastion'].includes(a.t) && canBuildOutOfTurn(S, pid)))
+    return fail(S.quickBuild && ['road', 'camp', 'bastion'].includes(a.t) ? 'Vous pourrez construire quand le joueur actif aura lancé les dés.' : "Ce n'est pas votre tour.");
 
   if (S.phase === 'setup') {
     if (S.setupSub === 'camp' && a.t === 'camp') {
@@ -335,6 +342,7 @@ export function applyAction(S, pid, a) {
     pay(S, p, costOf(S, 'sentier')); S.edges[a.e].road = pid; p.built.sentier++;
     ev.push({ k: 'road', e: a.e, pid });
     const nw = reveal(S, S.edges[a.e].tiles); if (nw.length) ev.push({ k: 'reveal', tiles: nw });
+    if (outOfTurn) ev.push({ k: 'toast', msg: `${p.nom} trace un sentier pendant le tour de ${S.players[S.current].nom}` });
     return { ok: true, events: ev };
   }
   if (a.t === 'camp') {
@@ -342,6 +350,7 @@ export function applyAction(S, pid, a) {
     pay(S, p, costOf(S, 'camp')); S.vertices[a.v].building = { owner: pid, type: 'camp' }; p.built.camp++;
     ev.push({ k: 'camp', v: a.v, pid });
     const nw = reveal(S, S.vertices[a.v].tiles); if (nw.length) ev.push({ k: 'reveal', tiles: nw });
+    if (outOfTurn) ev.push({ k: 'toast', msg: `${p.nom} installe un camp pendant le tour de ${S.players[S.current].nom}` });
     checkWin(S, p, ev);
     return { ok: true, events: ev };
   }
@@ -349,6 +358,7 @@ export function applyAction(S, pid, a) {
     if (!canBuild(S, pid, 'bastion') || !legalBastions(S, pid).includes(a.v)) return fail('Bastion impossible ici.');
     pay(S, p, costOf(S, 'bastion')); S.vertices[a.v].building.type = 'bastion'; p.built.camp--; p.built.bastion++;
     ev.push({ k: 'bastion', v: a.v, pid });
+    if (outOfTurn) ev.push({ k: 'toast', msg: `${p.nom} élève un bastion pendant le tour de ${S.players[S.current].nom}` });
     checkWin(S, p, ev);
     return { ok: true, events: ev };
   }
@@ -367,6 +377,7 @@ export function applyAction(S, pid, a) {
     if (S.current === 0) { startRound(S); ev.push({ k: 'toast', msg: `Nouvelle marée : ${tideTitle(S.tide)}. ${tideDesc(S.tide)}`, ms: 4200 }); }
     S.phase = 'roll';
     ev.push({ k: 'turn', pid: S.current });
+    checkWin(S, S.players[S.current], ev);
     return { ok: true, events: ev };
   }
   return fail('Action inconnue.');
