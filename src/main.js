@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions } from './view.js';
 import { openRoom } from './net.js';
@@ -56,6 +56,7 @@ function renderHUD(bumped = []) {
   const st = S(); if (!st) return;
   const me = myPid(), mine = me >= 0 ? st.players[me] : null;
   const online = session.mode === 'online';
+  $('players').classList.toggle('compact', st.players.length > 4);
   $('players').innerHTML = st.players.map(q => {
     const away = online && q.clientId && session.peers && !session.peers.has(q.clientId);
     return `<div class="pchip ${q.id === st.current ? 'active' : ''} ${away ? 'away' : ''}"><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}${online && q.id === me ? ' (vous)' : ''}</b><span>${vp(q)} pts</span><small>${total(q)} 🂠</small></div>`;
@@ -76,6 +77,7 @@ function renderHUD(bumped = []) {
   $('btnEnd').disabled = !(mt && st.phase === 'main');
   $('btnSentier').querySelector('.co').textContent = st.tide?.type === 'chantier-sentier' ? '🪵 seulement' : '🪵🪨';
   for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).classList.toggle('on', uiMode === m);
+  $('toasts').style.top = `${Math.round($('top').getBoundingClientRect().bottom + 8)}px`;
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
@@ -278,11 +280,11 @@ function renderLobby() {
   const l = session.lobby; if (!l) return;
   $('lobbyCode').textContent = l.code;
   $('lobbySeats').innerHTML = l.seats.map((s, i) => `<li><span class="dot" style="background:${PLAYER_DEFS[i].col}"></span><b>${esc(s.name)}</b>${s.clientId === l.hostId ? '<small>hôte</small>' : ''}${s.clientId === ME.id ? '<small>vous</small>' : ''}${session.peers.has(s.clientId) ? '' : '<small class="off">hors ligne</small>'}</li>`).join('') +
-    Array.from({ length: 4 - l.seats.length }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
+    Array.from({ length: MAX_PLAYERS - l.seats.length }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
   $('btnLaunch').disabled = l.seats.length < 2;
-  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner.`) : "En attente que l'hôte lance la partie…";
+  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
@@ -303,8 +305,8 @@ function onMessage(m) {
     const l = session.lobby; if (!l) return;
     const seat = l.seats.find(s => s.clientId === m.from);
     if (seat) seat.name = m.name || seat.name;
-    else if (l.seats.length < 4) l.seats.push({ clientId: m.from, name: m.name || PLAYER_DEFS[l.seats.length].nom });
-    else { session.room.send({ type: 'error', to: m.from, msg: 'La partie est complète (4 joueurs).' }); return; }
+    else if (l.seats.length < MAX_PLAYERS) l.seats.push({ clientId: m.from, name: m.name || PLAYER_DEFS[l.seats.length].nom });
+    else { session.room.send({ type: 'error', to: m.from, msg: `La partie est complète (${MAX_PLAYERS} joueurs).` }); return; }
     renderLobby(); broadcastLobby();
     return;
   }

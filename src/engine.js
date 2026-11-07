@@ -10,15 +10,20 @@ export const RES_INFO = {
   grain:   { nom: 'Grain',   ic: '🌾', terrain: 'Terrasses', col: '#dfac45' },
   cristal: { nom: 'Cristal', ic: '💎', terrain: 'Pics',      col: '#7c879e' },
 };
+/* Île standard (2-4 joueurs) : 19 tuiles. Grande île (5-6 joueurs) : 31 tuiles, coins rognés. */
 const TERRAIN_COUNTS = { bois: 4, pierre: 3, lin: 4, grain: 4, cristal: 3 };
+const TERRAIN_COUNTS_BIG = { bois: 7, pierre: 5, lin: 7, grain: 6, cristal: 5 };
 const NUMBERS = [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12];
+const NUMBERS_BIG = [2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 11, 11, 11, 12, 12];
 export const PIPS = n => 6 - Math.abs(7 - n);
 const BASE_COSTS = { sentier: { bois: 1, pierre: 1 }, camp: { bois: 1, pierre: 1, lin: 1, grain: 1 }, bastion: { grain: 2, cristal: 3 } };
 export const LIMITS = { sentier: 15, camp: 5, bastion: 4 };
 export const PLAYER_DEFS = [
   { nom: 'Corail', col: '#ef6a52' }, { nom: 'Jade', col: '#2fb3a5' },
   { nom: 'Ambre', col: '#f2b52c' }, { nom: 'Indigo', col: '#8a72ff' },
+  { nom: 'Azur', col: '#3f9cff' }, { nom: 'Ivoire', col: '#efe9dc' },
 ];
+export const MAX_PLAYERS = 6;
 export const SIZE = 1;
 
 /* Hasard : graine pour l'île (reproductible), Math.random pour le reste (tiré par l'hôte) */
@@ -68,10 +73,12 @@ function drawTide(S, prevRes) {
 const NEIGH = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 function axialToXZ(q, r) { return { x: SIZE * Math.sqrt(3) * (q + r / 2), z: SIZE * 1.5 * r }; }
 
-export function generateIsland(seed) {
+const isCorner = (q, r, R) => { const s = -q - r; return [Math.abs(q), Math.abs(r), Math.abs(s)].filter(v => v === R).length === 2 && [q, r, s].includes(0); };
+export function generateIsland(seed, big = false) {
   const saved = rand; rand = mulberry32(seed);
+  const R = big ? 3 : 2;
   const tiles = [];
-  for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++) if (Math.abs(q + r) <= 2) {
+  for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) if (Math.abs(q + r) <= R && !(big && isCorner(q, r, R))) {
     const p = axialToXZ(q, r);
     tiles.push({ id: tiles.length, q, r, x: p.x, z: p.z, terrain: null, number: null, revealed: false, neighbors: [], vertices: [] });
   }
@@ -80,15 +87,16 @@ export function generateIsland(seed) {
   const center = tiles.find(t => t.q === 0 && t.r === 0);
   const land = tiles.filter(t => t !== center);
 
-  const bag = []; for (const r of RES) for (let i = 0; i < TERRAIN_COUNTS[r]; i++) bag.push(r);
-  for (let a = 0; a < 5000; a++) {
+  const counts = big ? TERRAIN_COUNTS_BIG : TERRAIN_COUNTS;
+  const bag = []; for (const r of RES) for (let i = 0; i < counts[r]; i++) bag.push(r);
+  for (let a = 0; a < 20000; a++) {
     shuffle(bag); land.forEach((t, i) => t.terrain = bag[i]);
     if (land.every(t => t.neighbors.filter(n => tiles[n].terrain === t.terrain).length <= 1)) break;
   }
   center.terrain = 'phare';
 
-  const nums = NUMBERS.slice();
-  for (let a = 0; a < 5000; a++) {
+  const nums = (big ? NUMBERS_BIG : NUMBERS).slice();
+  for (let a = 0; a < 20000; a++) {
     shuffle(nums); land.forEach((t, i) => t.number = nums[i]);
     const ok = land.every(t => t.neighbors.every(n => {
       const o = tiles[n]; if (o.number == null) return true;
@@ -121,29 +129,30 @@ export function generateIsland(seed) {
     const a = vertices[e.v[0]], b = vertices[e.v[1]];
     return { e, ang: Math.atan2((a.z + b.z) / 2, (a.x + b.x) / 2) };
   }).sort((p, q) => p.ang - q.ang);
-  const portTypes = shuffle(['3:1', '3:1', '3:1', '3:1', ...RES]);
+  const portTypes = shuffle(big ? ['3:1', '3:1', '3:1', '3:1', '3:1', ...RES, 'lin'] : ['3:1', '3:1', '3:1', '3:1', ...RES]);
+  const nPorts = portTypes.length;
   const offset = Math.floor(rand() * 3);
   const ports = [];
-  for (let i = 0; i < 9; i++) {
-    const e = coast[(Math.round(i * coast.length / 9) + offset) % coast.length].e;
+  for (let i = 0; i < nPorts; i++) {
+    const e = coast[(Math.round(i * coast.length / nPorts) + offset) % coast.length].e;
     ports.push({ edge: e.id, type: portTypes[i] });
     for (const v of e.v) vertices[v].port = portTypes[i];
   }
   center.revealed = true; for (const n of center.neighbors) tiles[n].revealed = true;
   rand = saved;
-  return { tiles, vertices, edges, ports, center: center.id };
+  return { tiles, vertices, edges, ports, center: center.id, big };
 }
 
 /* ---------- Création d'une partie ---------- */
 /* seats : [{ clientId, name }] dans l'ordre des places */
 export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null }) {
-  const isl = generateIsland(seed);
   const n = seats.length;
+  const isl = generateIsland(seed, n > 4);
   const S = {
     v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, ...isl,
     players: seats.map((s, i) => ({ id: i, clientId: s.clientId || null, nom: s.name || PLAYER_DEFS[i].nom, col: PLAYER_DEFS[i].col,
       res: Object.fromEntries(RES.map(r => [r, 0])), fortune: 0, built: { sentier: 0, camp: 0, bastion: 0 } })),
-    bank: Object.fromEntries(RES.map(r => [r, 19])),
+    bank: Object.fromEntries(RES.map(r => [r, n > 4 ? 24 : 19])),
     current: 0, phase: 'setup', round: 0,
     setupOrder: [...Array(n).keys(), ...[...Array(n).keys()].reverse()],
     setupStep: 0, setupSub: 'camp', lastCamp: null,

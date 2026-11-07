@@ -9,7 +9,8 @@ const TOP = 0.15;
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-let renderer, scene, camera, sea, sun, world, markers, view = null, seaTarget = SEA_BASE.clone();
+let renderer, scene, camera, sea, sun, world, markers, shallows, view = null, seaTarget = SEA_BASE.clone();
+let extent = 4.33; // demi-largeur de l'île, recalculée à chaque plateau
 let tapHandler = () => {};
 
 export function initView(canvas) {
@@ -25,12 +26,12 @@ export function initView(canvas) {
   sun = new THREE.DirectionalLight('#ffe3bd', 1.7);
   sun.position.set(4, 10, 5); sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 1, far: 30 });
+  Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 30 });
   scene.add(sun);
   sea = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.MeshStandardMaterial({ color: SEA_BASE.clone(), roughness: 0.55, metalness: 0.1 }));
   sea.rotation.x = -Math.PI / 2; sea.position.y = -0.22; sea.receiveShadow = true; scene.add(sea);
-  const shallows = new THREE.Mesh(new THREE.CircleGeometry(5.3, 64), new THREE.MeshStandardMaterial({ color: '#2a7186', roughness: 0.7, transparent: true, opacity: 0.75 }));
-  shallows.rotation.x = -Math.PI / 2; shallows.position.y = -0.2; scene.add(shallows);
+  shallows = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshStandardMaterial({ color: '#2a7186', roughness: 0.7, transparent: true, opacity: 0.75 }));
+  shallows.rotation.x = -Math.PI / 2; shallows.position.y = -0.2; shallows.scale.setScalar(5.3); scene.add(shallows);
   world = new THREE.Group(); scene.add(world);
   markers = new THREE.Group(); scene.add(markers);
   setupInput(canvas);
@@ -208,6 +209,9 @@ function roadMesh(eid, pid, fromVid) {
 
 export function buildView(state) {
   S = state;
+  extent = Math.max(...S.tiles.map(t => Math.abs(t.x))) + 0.87;
+  shallows.scale.setScalar(extent + 1);
+  layoutCamera();
   world.clear(); markers.clear(); tweens.length = 0;
   view = { tiles: [], vertexObjs: new Map(), roadObjs: new Map(), robber: null, phare: null, gameId: S.gameId };
   for (const t of S.tiles) {
@@ -405,7 +409,7 @@ let zoom = 1; const pan = new THREE.Vector2(0, 0);
 function layoutCamera() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h;
-  const need = camera.aspect < 0.75 ? 9.4 : 11.2;
+  const need = 2 * extent + (camera.aspect < 0.75 ? 0.75 : 2.5); // largeur de l'île (+ ports) à garder visible
   const vfov = THREE.MathUtils.degToRad(camera.fov);
   const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
   const dist = Math.max((need / 2) / Math.tan(hfov / 2), (need * 0.95 / 2) / Math.tan(vfov / 2)) * zoom;

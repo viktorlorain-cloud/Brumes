@@ -46,6 +46,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--lamp); outl
 .pchip.away { opacity: 0.45; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: rgba(255,255,255,0.15); box-shadow: 0 0 0 2px rgba(255,255,255,0.15); }
 .pchip b { font-weight: 800; }
+#players.compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 3px; padding: 6px; }
+#players.compact .menuBtn { grid-column: 4; grid-row: 1 / span 2; height: auto; }
+#players.compact .pchip { padding: 4px 5px; font-size: 11px; gap: 4px; min-width: 0; }
+#players.compact .pchip b { overflow: hidden; text-overflow: ellipsis; }
+#players.compact .pchip small { display: none; }
 .pchip small { color: var(--ink-soft); }
 .menuBtn { margin-left: auto; flex: none; border: 1px solid var(--panel-line); background: rgba(255,255,255,0.06); border-radius: 10px; width: 36px; height: 30px; font-size: 18px; line-height: 1; }
 #tides { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; }
@@ -168,7 +173,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
     <div class="joinRow"><input type="text" id="codeInput" maxlength="4" placeholder="CODE" autocomplete="off" aria-label="Code de la partie"><button class="ghost" id="btnJoin" type="button">Rejoindre</button></div>
     <div class="sep">ou sur un seul téléphone</div>
     <div class="field"><span>Nombre d'expéditions (on se passe le téléphone)</span>
-      <div class="seg" id="segLocal"><button type="button" data-v="2">2</button><button type="button" data-v="3" class="sel">3</button><button type="button" data-v="4">4</button></div>
+      <div class="seg" id="segLocal"><button type="button" data-v="2">2</button><button type="button" data-v="3" class="sel">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button></div>
     </div>
     <div class="row2"><button class="ghost" id="btnLocal" type="button">Partie locale</button><button class="ghost" id="btnResumeLocal" type="button" style="display:none">Reprendre</button></div>
     <details>
@@ -181,6 +186,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
         <li>Chaque tour de table, une marée change la production ou la valeur d'une ressource. La suivante est toujours annoncée.</li>
         <li>Un camp au contact du Phare échange à 2 contre 1 la ressource de la marée en cours.</li>
         <li>Sur un 7, le Rôdeur bloque une tuile et vole une carte. Au-delà de 7 cartes, on en défausse la moitié.</li>
+        <li>De 2 à 4 joueurs : île de 19 tuiles. À 5 ou 6 : grande île de 31 tuiles, 11 ports et une banque plus fournie.</li>
       </ul>
     </details>
     <div class="install" id="installHelp">
