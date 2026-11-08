@@ -81,7 +81,7 @@ function makeDecor(terrain, rot) {
   if (terrain === 'bois') {
     for (let i = 0; i < 6; i++) {
       const [x, z] = ringPos(i, 6, 0.6 + (i % 2) * 0.08, rot);
-      const s = 0.8 + ((i * 37) % 5) / 10;
+      const s = 0.68 + ((i * 37) % 5) / 12;
       const trunk = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.12, 5), mat('#6b4a2e')));
       trunk.position.set(x, 0.06, z);
       const top = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.13 * s, 0.38 * s, 6), mat(i % 2 ? '#2f6b3b' : '#3b8048')));
@@ -116,8 +116,8 @@ function makeDecor(terrain, rot) {
     }
   } else if (terrain === 'cristal') {
     [[0.55, rot], [0.6, rot + 2.2], [0.5, rot + 4.1]].forEach(([rad, a], i) => {
-      const x = Math.cos(a) * rad, z = Math.sin(a) * rad, h = 0.55 + i * 0.12;
-      const m = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.3, h, 5), mat('#6f7a8f')));
+      const x = Math.cos(a) * rad, z = Math.sin(a) * rad, h = 0.42 + i * 0.09;
+      const m = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.27, h, 5), mat('#6f7a8f')));
       m.position.set(x, h / 2, z); g.add(m);
       const cap = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.2, 5), mat('#eef3f8'));
       cap.position.set(x, h - 0.08, z); g.add(cap);
@@ -166,22 +166,57 @@ function makeScout(color) {
   const pack = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.05), mat('#6b4a2e'))); pack.position.set(0, 0.17, -0.06); g.add(pack);
   return scaled(g, 1.7);
 }
+/* Contour sombre (coque inversée) : détache les bâtiments du terrain, même de loin */
+const outlineMat = new THREE.MeshBasicMaterial({ color: '#0b1820', side: THREE.BackSide });
+function outlined(mesh, k = 1.12) {
+  const o = new THREE.Mesh(mesh.geometry, outlineMat); o.scale.setScalar(k); mesh.add(o); return mesh;
+}
+function gableRoof(w, h, d, color) {
+  const shape = new THREE.Shape(); shape.moveTo(-w / 2, 0); shape.lineTo(w / 2, 0); shape.lineTo(0, h); shape.lineTo(-w / 2, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false }); geo.translate(0, 0, -d / 2);
+  return outlined(shadowed(new THREE.Mesh(geo, mat(color, { emissive: color, emissiveIntensity: 0.18 }))), 1.1);
+}
+function basePlate(color, r) {
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.035, 24), mat(color, { emissive: color, emissiveIntensity: 0.35, flatShading: false }));
+  ring.position.y = 0.018; g.add(ring);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.012, 6, 32), new THREE.MeshBasicMaterial({ color: '#fff4dc' }));
+  rim.rotation.x = Math.PI / 2; rim.position.y = 0.036; g.add(rim);
+  return g;
+}
+function makeFlag(color, h) {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, h, 4), mat('#3b2a1c')); pole.position.y = h / 2; g.add(pole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.07), mat(color, { side: THREE.DoubleSide, emissive: color, emissiveIntensity: 0.35 }));
+  flag.position.set(0.06, h - 0.04, 0); g.add(flag); g.userData.flag = flag;
+  return g;
+}
+/* Camp : une petite maison à toit en pente, aux couleurs du joueur */
 function makeTent(color) {
   const g = new THREE.Group();
-  const tent = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.26, 4), mat(color))); tent.position.y = 0.13; tent.rotation.y = Math.PI / 4; g.add(tent);
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.11), mat('#1b2a33', { side: THREE.DoubleSide })); door.position.set(0, 0.06, 0.122); door.rotation.x = -0.35; g.add(door);
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.22, 4), mat('#3b2a1c')); pole.position.set(0, 0.36, 0); g.add(pole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.06), mat(color, { side: THREE.DoubleSide, emissive: color, emissiveIntensity: 0.25 })); flag.position.set(0.055, 0.43, 0); g.add(flag); g.userData.flag = flag;
-  return scaled(g, 1.4);
+  g.add(basePlate(color, 0.2));
+  const body = outlined(shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.17), mat('#efe3c8'))), 1.1);
+  body.position.y = 0.11; g.add(body);
+  const roof = gableRoof(0.26, 0.15, 0.21, color); roof.position.y = 0.185; g.add(roof);
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.08), mat('#4a3322')); door.position.set(0, 0.075, 0.086); g.add(door);
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 0.04), new THREE.MeshBasicMaterial({ color: '#ffd98a' })); win.position.set(0.1005, 0.12, 0); win.rotation.y = Math.PI / 2; g.add(win);
+  const flag = makeFlag(color, 0.42); flag.position.set(-0.07, 0.03, -0.05); g.add(flag); g.userData.flag = flag.userData.flag;
+  return scaled(g, 1.55);
 }
+/* Bastion : une tour de pierre plus haute, toit et bannière aux couleurs du joueur */
 function makeBastion(color) {
   const g = new THREE.Group();
-  const base = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.34, 8), mat('#d6cdb8'))); base.position.y = 0.17; g.add(base);
-  for (let i = 0; i < 8; i++) { const [x, z] = ringPos(i, 8, 0.16); const m = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.05), mat('#cfc4ad'))); m.position.set(x, 0.37, z); g.add(m); }
-  const roof = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 8), mat(color))); roof.position.y = 0.48; g.add(roof);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.07), mat(color, { side: THREE.DoubleSide, emissive: color, emissiveIntensity: 0.25 })); flag.position.set(0.06, 0.66, 0); g.add(flag); g.userData.flag = flag;
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 4), mat('#3b2a1c')); pole.position.set(0, 0.64, 0); g.add(pole);
-  return scaled(g, 1.25);
+  g.add(basePlate(color, 0.25));
+  const base = outlined(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.18, 0.38, 10), mat('#d9d0bc'))), 1.08);
+  base.position.y = 0.21; g.add(base);
+  for (let i = 0; i < 8; i++) { const [x, z] = ringPos(i, 8, 0.15); const m = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.05), mat('#cfc4ad'))); m.position.set(x, 0.43, z); g.add(m); }
+  const roof = outlined(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 10), mat(color, { emissive: color, emissiveIntensity: 0.18 }))), 1.1);
+  roof.position.y = 0.55; g.add(roof);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.162, 0.17, 0.05, 10), mat(color, { emissive: color, emissiveIntensity: 0.3 })); band.position.y = 0.2; g.add(band);
+  const wing = outlined(shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.14), mat('#e6dcc6'))), 1.1); wing.position.set(0.15, 0.09, 0.05); g.add(wing);
+  const wroof = gableRoof(0.19, 0.09, 0.16, color); wroof.position.set(0.15, 0.16, 0.05); g.add(wroof);
+  const flag = makeFlag(color, 0.3); flag.position.y = 0.66; g.add(flag); g.userData.flag = flag.userData.flag;
+  return scaled(g, 1.5);
 }
 function makeRobber() {
   const g = new THREE.Group();
@@ -199,10 +234,12 @@ function roadMesh(eid, pid, fromVid) {
   const startV = fromVid != null ? fromVid : e.v[0];
   const endV = e.v[0] === startV ? e.v[1] : e.v[0];
   const a = vpos(startV, TOP + 0.03), b = vpos(endV, TOP + 0.03), len = a.distanceTo(b);
-  const geo = new THREE.BoxGeometry(len * 0.8, 0.06, 0.13); geo.translate(len * 0.4, 0, 0);
-  const road = shadowed(new THREE.Mesh(geo, mat(S.players[pid].col)));
+  const geo = new THREE.BoxGeometry(len * 0.74, 0.07, 0.15); geo.translate(len * 0.37, 0, 0);
+  const col = S.players[pid].col;
+  const road = shadowed(new THREE.Mesh(geo, mat(col, { emissive: col, emissiveIntensity: 0.25 })));
+  const edge = new THREE.Mesh(geo, outlineMat); edge.scale.set(1.02, 1.25, 1.35); road.add(edge);
   const dir = b.clone().sub(a).normalize();
-  road.position.copy(a.clone().add(dir.clone().multiplyScalar(len * 0.1)));
+  road.position.copy(a.clone().add(dir.clone().multiplyScalar(len * 0.13)));
   road.rotation.y = Math.atan2(-dir.z, dir.x);
   return road;
 }
@@ -404,57 +441,148 @@ export function showMarkers(kind, ids) {
 }
 export function clearMarkers() { markers.clear(); }
 
-/* ---------- Caméra et gestes ---------- */
-let zoom = 1; const pan = new THREE.Vector2(0, 0);
+/* ---------- Caméra et gestes ----------
+   La caméra suit des valeurs cibles avec amortissement : le zoom et le
+   déplacement glissent au lieu de sauter. Le pincement zoome autour du point
+   situé sous les doigts, le glissé garde de l'élan, le double-tap zoome. */
+const ZMIN = 0.42, ZMAX = 1.15;
+let zoom = 1, zoomT = 1;
+const pan = new THREE.Vector2(0, 0), panT = new THREE.Vector2(0, 0), vel = new THREE.Vector2(0, 0);
+let dragging = false;
+const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const probeCam = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+function placeCamera(cam, z, p) {
+  const need = 2 * extent + (cam.aspect < 0.75 ? 0.75 : 2.5);
+  const vfov = THREE.MathUtils.degToRad(cam.fov);
+  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * cam.aspect);
+  const dist = Math.max((need / 2) / Math.tan(hfov / 2), (need * 0.95 / 2) / Math.tan(vfov / 2)) * z;
+  const tilt = THREE.MathUtils.degToRad(63);
+  cam.position.set(p.x, Math.sin(tilt) * dist, p.y + 0.35 + Math.cos(tilt) * dist);
+  cam.lookAt(p.x, 0, p.y + 0.35);
+  cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+  return dist;
+}
 function layoutCamera() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false); camera.aspect = w / h;
-  const need = 2 * extent + (camera.aspect < 0.75 ? 0.75 : 2.5); // largeur de l'île (+ ports) à garder visible
-  const vfov = THREE.MathUtils.degToRad(camera.fov);
-  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-  const dist = Math.max((need / 2) / Math.tan(hfov / 2), (need * 0.95 / 2) / Math.tan(vfov / 2)) * zoom;
-  const tilt = THREE.MathUtils.degToRad(57);
-  camera.position.set(pan.x, Math.sin(tilt) * dist, pan.y + 0.35 + Math.cos(tilt) * dist);
-  camera.lookAt(pan.x, 0, pan.y + 0.35);
-  camera.updateProjectionMatrix();
-  scene.fog.near = dist * 1.05; scene.fog.far = dist * 2.4;
+  renderer.setSize(w, h, false); camera.aspect = w / h; probeCam.aspect = camera.aspect;
+  const dist = placeCamera(camera, zoom, pan);
+  scene.fog.near = dist * 1.05 / zoom; scene.fog.far = dist * 2.4 / zoom;
 }
-export function resetCamera() { zoom = 1; pan.set(0, 0); layoutCamera(); }
+/* Point du sol (y = 0) sous une position d'écran, pour une caméra donnée */
+const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _hit = new THREE.Vector3();
+function groundAt(x, y, z = zoomT, p = panT) {
+  placeCamera(probeCam, z, p);
+  _ndc.set(x / window.innerWidth * 2 - 1, -(y / window.innerHeight) * 2 + 1);
+  _ray.setFromCamera(_ndc, probeCam);
+  return _ray.ray.intersectPlane(ground, _hit) ? _hit.clone() : null;
+}
+function clampPan(v) {
+  const lim = 0.25 + extent * (1 - Math.min(1, zoomT)) * 1.35;
+  v.x = THREE.MathUtils.clamp(v.x, -lim, lim); v.y = THREE.MathUtils.clamp(v.y, -lim, lim);
+}
+/* Zoome vers zoomNew en gardant fixe le point du plateau situé sous (x, y) */
+function zoomAround(x, y, zoomNew) {
+  const before = groundAt(x, y);
+  zoomT = THREE.MathUtils.clamp(zoomNew, ZMIN, ZMAX);
+  const after = groundAt(x, y);
+  if (before && after) { panT.x += before.x - after.x; panT.y += before.z - after.z; }
+  if (zoomT >= 0.99) panT.multiplyScalar(0.5);
+  clampPan(panT);
+}
+export function resetCamera() { zoom = zoomT = 1; pan.set(0, 0); panT.set(0, 0); vel.set(0, 0); layoutCamera(); }
+function updateCamera(dt) {
+  if (!dragging && vel.lengthSq() > 1e-6) {
+    panT.addScaledVector(vel, dt); clampPan(panT);
+    vel.multiplyScalar(Math.exp(-dt * 6));
+  }
+  const k = 1 - Math.exp(-dt * 14);
+  const dz = zoomT - zoom, dp = pan.distanceToSquared(panT);
+  if (Math.abs(dz) < 1e-4 && dp < 1e-7) return;
+  zoom += dz * k; pan.lerp(panT, k);
+  const dist = placeCamera(camera, zoom, pan);
+  scene.fog.near = dist * 1.05 / zoom; scene.fog.far = dist * 2.4 / zoom;
+}
 function setupInput(canvas) {
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), pointers = new Map();
-  let downAt = null, moved = false, pinch0 = null;
-  canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); downAt = { x: e.clientX, y: e.clientY }; moved = false; if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch0 = { d: Math.hypot(a.x - b.x, a.y - b.y), z: zoom }; } });
+  let downAt = null, moved = false, pinch = null, lastMove = 0, lastTap = { t: 0, x: 0, y: 0 };
+  const mid = () => { const [a, b] = [...pointers.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) }; };
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    vel.set(0, 0); dragging = true;
+    if (pointers.size === 1) { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; moved = false; }
+    if (pointers.size === 2) { const m = mid(); pinch = { d: m.d, z: zoomT, x: m.x, y: m.y }; moved = true; }
+  });
   canvas.addEventListener('pointermove', e => {
     if (!pointers.has(e.pointerId)) return;
     const prev = pointers.get(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 2 && pinch0) { const [a, b] = [...pointers.values()]; zoom = THREE.MathUtils.clamp(pinch0.z * pinch0.d / Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), 0.5, 1.15); moved = true; layoutCamera(); return; }
+    if (pointers.size === 2 && pinch) {
+      const m = mid();
+      // Glissé à deux doigts + pincement, autour du point sous les doigts
+      const a = groundAt(pinch.x, pinch.y), b = groundAt(m.x, m.y);
+      if (a && b) { panT.x += a.x - b.x; panT.y += a.z - b.z; }
+      zoomAround(m.x, m.y, pinch.z * pinch.d / Math.max(1, m.d));
+      pinch.x = m.x; pinch.y = m.y;
+      return;
+    }
     if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 8) moved = true;
-    if (moved && pointers.size === 1 && zoom < 0.98) {
-      const k = 0.012 * zoom;
-      pan.x = THREE.MathUtils.clamp(pan.x - (e.clientX - prev.x) * k, -3, 3);
-      pan.y = THREE.MathUtils.clamp(pan.y - (e.clientY - prev.y) * k * 1.2, -3, 3);
-      layoutCamera();
+    if (moved && pointers.size === 1) {
+      const a = groundAt(prev.x, prev.y), b = groundAt(e.clientX, e.clientY);
+      if (!a || !b) return;
+      const dx = a.x - b.x, dz = a.z - b.z;
+      panT.x += dx; panT.y += dz; clampPan(panT);
+      const now = performance.now(), dt = Math.max(8, now - lastMove) / 1000; lastMove = now;
+      vel.set(dx / dt, dz / dt).multiplyScalar(0.8);
     }
   });
+  const end = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 1) { const [p] = pointers.values(); downAt = { x: p.x, y: p.y, t: performance.now() }; }
+    if (pointers.size === 0) { dragging = false; if (performance.now() - lastMove > 80) vel.set(0, 0); }
+    return pointers.size === 0;
+  };
   canvas.addEventListener('pointerup', e => {
-    pointers.delete(e.pointerId); if (pointers.size < 2) pinch0 = null;
-    if (moved || pointers.size !== 0 || !markers.children.length) return;
-    ndc.set(e.clientX / window.innerWidth * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-    camera.updateMatrixWorld(); markers.updateMatrixWorld(true);
-    ray.setFromCamera(ndc, camera);
-    const hits = ray.intersectObjects(markers.children, true);
-    if (!hits.length) return;
-    let o = hits[0].object; while (o && !o.userData.kind) o = o.parent;
-    if (o) tapHandler(o.userData.kind, o.userData.id);
+    if (!end(e) || moved) return;
+    // Toucher simple : un emplacement lumineux d'abord
+    if (markers.children.length) {
+      ndc.set(e.clientX / window.innerWidth * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+      camera.updateMatrixWorld(); markers.updateMatrixWorld(true);
+      ray.setFromCamera(ndc, camera);
+      const hits = ray.intersectObjects(markers.children, true);
+      if (hits.length) { let o = hits[0].object; while (o && !o.userData.kind) o = o.parent; if (o) { tapHandler(o.userData.kind, o.userData.id); lastTap.t = 0; return; } }
+    }
+    // Double-tap ailleurs : zoom avant ou retour à la vue d'ensemble
+    const now = performance.now();
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      if (zoomT > 0.8) zoomAround(e.clientX, e.clientY, 0.55); else { zoomT = 1; panT.set(0, 0); }
+      lastTap.t = 0;
+    } else lastTap = { t: now, x: e.clientX, y: e.clientY };
   });
-  canvas.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinch0 = null; });
-  canvas.addEventListener('wheel', e => { e.preventDefault(); zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.5, 1.15); if (zoom >= 0.98) pan.set(0, 0); layoutCamera(); }, { passive: false });
+  canvas.addEventListener('pointercancel', e => { end(e); });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAround(e.clientX, e.clientY, zoomT * Math.exp(e.deltaY * 0.0015)); }, { passive: false });
+}
+
+/* Qualité adaptative : si le téléphone peine, on baisse la résolution, puis les ombres */
+let frames = 0, frameTime = 0, quality = 0;
+function adaptQuality(dt) {
+  frames++; frameTime += dt;
+  if (frameTime < 2.5) return;
+  const avg = frameTime / frames; frames = 0; frameTime = 0;
+  if (avg > 0.03 && quality < 3) {
+    quality++;
+    if (quality === 1) renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    else if (quality === 2) { renderer.setPixelRatio(1); }
+    else { renderer.shadowMap.enabled = false; scene.traverse(o => { if (o.material) o.material.needsUpdate = true; }); }
+    layoutCamera();
+  }
 }
 
 /* ---------- Boucle de rendu ---------- */
 const clock = new THREE.Clock();
 function loop() {
-  const dt = Math.min(clock.getDelta(), 0.05), time = clock.elapsedTime;
+  const raw = clock.getDelta(), dt = Math.min(raw, 0.05), time = clock.elapsedTime;
+  updateCamera(dt);
+  if (!document.hidden) adaptQuality(raw);
   for (let i = tweens.length - 1; i >= 0; i--) {
     const tw = tweens[i]; tw.t += dt; if (tw.t < 0) continue;
     const k = Math.min(1, tw.t / tw.dur); tw.update(k);

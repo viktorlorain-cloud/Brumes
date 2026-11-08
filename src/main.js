@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions } from './view.js';
 import { openRoom } from './net.js';
@@ -119,6 +119,7 @@ function refreshAll(bumped) { renderHUD(bumped); refreshInteraction(); }
 /* ---------- Réception d'un nouvel état ---------- */
 function onNewState(state, events, sequential) {
   session.state = state;
+  syncTimer(state);
   if (session.mode === 'online') store.set('brumes:last', { code: session.code, state });
   else store.set('brumes:local', state);
   const animate = sequential && viewGameId() === state.gameId;
@@ -150,6 +151,69 @@ function showWin(pid) {
   showOverlay('winOverlay');
 }
 
+
+/* ---------- Minuteur de tour ----------
+   L'hôte (ou le téléphone en partie locale) fait foi : il fixe l'échéance et joue
+   automatiquement à la place du joueur quand le temps est écoulé. Les autres
+   téléphones affichent le temps restant reçu avec l'état. */
+const TIME_LABEL = v => v ? (v < 60 ? `${v} s` : v % 60 ? `${Math.floor(v / 60)} min ${v % 60}` : `${v / 60} min`) : 'Sans limite';
+let deadline = 0, timerKey = null, warned = false, expiredKey = null;
+const turnKeyOf = st => st.phase === 'setup' ? `s${st.setupStep}` : `t${st.round}:${st.current}`;
+const isReferee = () => session && (session.mode === 'local' || session.isHost);
+function syncTimer(st) {
+  if (!st || !st.turnTime || st.phase === 'over') { deadline = 0; return; }
+  const k = turnKeyOf(st);
+  if (isReferee()) {
+    if (k !== timerKey || !deadline) { timerKey = k; deadline = Date.now() + st.turnTime * 1000; warned = false; }
+    st.timerLeftMs = Math.max(0, deadline - Date.now());
+  } else {
+    if (k !== timerKey) { timerKey = k; warned = false; }
+    deadline = Date.now() + (st.timerLeftMs ?? st.turnTime * 1000);
+  }
+}
+function renderTimer() {
+  const st = S(), el = $('timer');
+  if (!st || !st.turnTime || !deadline || st.phase === 'over') { el.hidden = true; return; }
+  const left = Math.max(0, deadline - Date.now()), frac = left / (st.turnTime * 1000);
+  el.hidden = false;
+  el.classList.toggle('low', left <= 10000);
+  el.querySelector('.fill').style.transform = `scaleX(${Math.min(1, frac).toFixed(4)})`;
+  const sec = Math.ceil(left / 1000);
+  el.querySelector('span').textContent = `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} · ${isMyTurn() ? 'à vous' : st.players[st.current].nom}`;
+  return left;
+}
+function autoPlay(st) {
+  const pid = st.current, k = turnKeyOf(st);
+  if (expiredKey !== k) { expiredKey = k; toast(`Temps écoulé pour ${st.players[pid].nom}`); }
+  let a = null;
+  if (st.phase === 'setup') {
+    if (st.setupSub === 'camp') {
+      const score = v => st.vertices[v].tiles.reduce((n, t) => n + (st.tiles[t].number ? PIPS(st.tiles[t].number) : 0), 0);
+      const c = legalCamps(st, pid, true).sort((x, y) => score(y) - score(x)); if (c.length) a = { t: 'camp', v: c[0] };
+    } else { const r = legalRoads(st, pid, true); if (r.length) a = { t: 'road', e: r[0] }; }
+  } else if (st.phase === 'roll') a = { t: 'roll' };
+  else if (st.phase === 'robber') {
+    const rivals = t => st.tiles[t].vertices.filter(v => st.vertices[v].building && st.vertices[v].building.owner !== pid).length - 2 * st.tiles[t].vertices.filter(v => st.vertices[v].building?.owner === pid).length;
+    const tiles = legalRobber(st).sort((x, y) => rivals(y) - rivals(x)); if (tiles.length) a = { t: 'robber', tile: tiles[0] };
+  } else if (st.phase === 'main') a = { t: 'end' };
+  if (a) { if (uiMode && pid === myPid()) uiMode = null; hostApply(pid, a); }
+}
+function tickTimer() {
+  const st = S(); if (!st) { $('timer').hidden = true; return; }
+  const left = renderTimer();
+  if (left == null) return;
+  if (left <= 10000 && left > 0 && !warned && isMyTurn()) { warned = true; toast('Plus que 10 secondes'); try { navigator.vibrate?.([60, 80, 60]); } catch { /* indisponible */ } }
+  if (left <= 0 && isReferee() && !waiting) autoPlay(st);
+}
+setInterval(tickTimer, 250);
+function setTurnTime(v) {
+  const st = S(); if (!st || !isReferee()) return;
+  st.turnTime = v; st.seq++; deadline = 0; timerKey = null; syncTimer(st);
+  const events = [{ k: 'toast', msg: `Temps par tour : ${TIME_LABEL(v)}` }];
+  if (session.mode === 'online') session.room.send({ type: 'state', state: st, events });
+  onNewState(st, events, true);
+}
+
 /* ---------- Jouer une action ---------- */
 function act(action) {
   const st = S(); if (!st) return;
@@ -169,6 +233,7 @@ function hostApply(pid, action) {
   const res = applyAction(st, pid, action);
   if (!res.ok) { if (pid === myPid()) toast(res.error); else session.room?.send({ type: 'error', to: st.players[pid]?.clientId, msg: res.error }); refreshAll(); return; }
   st.seq++; st.hostId = session.mode === 'online' ? ME.id : null;
+  syncTimer(st);
   if (session.mode === 'online') session.room.send({ type: 'state', state: st, events: res.events });
   onNewState(st, res.events, true);
 }
@@ -212,7 +277,15 @@ $('btnBankClose').onclick = hideOverlays;
 $('btnTrade').onclick = () => { if (!give_ || !get_) return; const a = { t: 'trade', give: give_, get: get_ }; hideOverlays(); act(a); };
 
 /* ---------- Menu de partie ---------- */
+function renderMenuTime() {
+  const st = S(); if (!st) return;
+  const can = isReferee();
+  $('segMenuTime').querySelectorAll('button').forEach(b => { b.classList.toggle('sel', +b.dataset.v === (st.turnTime || 0)); b.disabled = !can; });
+  $('menuTimeNote').textContent = can ? "S'applique tout de suite au tour en cours." : "Seul l'hôte peut changer le temps par tour.";
+}
+$('segMenuTime').querySelectorAll('button').forEach(b => b.onclick = () => { setTurnTime(+b.dataset.v); renderMenuTime(); });
 function openMenu() {
+  renderMenuTime();
   const online = session?.mode === 'online';
   $('menuCode').textContent = online ? `Partie ${session.code}` : 'Partie sur ce téléphone';
   $('menuInvite').style.display = online ? '' : 'none';
@@ -240,7 +313,7 @@ async function shareInvite(code) {
 }
 
 function leave() {
-  clearTimeout(takeoverTimer); clearTimeout(waitTimer);
+  clearTimeout(takeoverTimer); clearTimeout(waitTimer); deadline = 0; timerKey = null;
   try { session?.room?.close(); } catch { /* déjà fermé */ }
   session = null; uiMode = null; waiting = false;
   clearMarkers(); hint('');
@@ -268,7 +341,7 @@ async function createOnline() {
   const code = newCode();
   showOverlay('lobbyOverlay');
   if (!await connect(code, true)) return;
-  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], win: winPts };
+  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], win: winPts, turnTime: timePref };
   renderLobby(); broadcastLobby();
 }
 async function joinOnline(code, resumeState = null) {
@@ -301,14 +374,15 @@ function renderLobby() {
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
   $('btnLaunch').disabled = l.seats.length < 2;
-  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île, avec construction pendant le tour des autres' : ''}.`) : "En attente que l'hôte lance la partie…";
+  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île, avec construction pendant le tour des autres' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
 $('btnLaunch').onclick = () => {
   const l = session.lobby; if (!session.isHost || l.seats.length < 2) return;
-  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, quickBuild: l.seats.length > 4 });
+  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, quickBuild: l.seats.length > 4, turnTime: l.turnTime || 0 });
   session.lobby = null; session.state = st; st.seq = 1;
+  deadline = 0; timerKey = null; syncTimer(st);
   session.room.send({ type: 'state', state: st, events: [] });
   hideOverlays(); resetCamera(); onNewState(st, [], false);
   toast('La brume cache les terrains. Les numéros restent visibles.', 3600);
@@ -318,7 +392,7 @@ function onMessage(m) {
   if (!session) return;
   if (m.to && m.to !== ME.id) return;
   if (m.type === 'hello' && session.isHost) {
-    if (session.state) { session.room.send({ type: 'state', state: session.state, events: [] }); return; }
+    if (session.state) { syncTimer(session.state); session.room.send({ type: 'state', state: session.state, events: [] }); return; }
     const l = session.lobby; if (!l) return;
     const seat = l.seats.find(s => s.clientId === m.from);
     if (seat) seat.name = m.name || seat.name;
@@ -375,13 +449,14 @@ function onPeers(ids) {
 function startLocal(n) {
   leave();
   const seats = PLAYER_DEFS.slice(0, n).map(d => ({ name: d.nom }));
-  session = { mode: 'local', state: createGame({ seats, win: winPts }) };
+  deadline = 0; timerKey = null;
+  session = { mode: 'local', state: createGame({ seats, win: winPts, turnTime: timePref }) };
   hideOverlays(); resetCamera(); onNewState(session.state, [], false);
   toast('La brume cache les terrains. Les numéros restent visibles.', 3600);
 }
 
 /* ---------- Écran d'accueil ---------- */
-let winPts = 10, localN = 3;
+let winPts = 10, localN = 3, timePref = store.get('brumes:turnTime', 90);
 function requireName() {
   const n = $('nameInput').value.trim().slice(0, 12);
   if (!n) { toast('Choisissez un nom pour que vos amis vous reconnaissent'); $('nameInput').focus(); return false; }
@@ -396,7 +471,8 @@ function renderHome() {
   $('btnResumeLocal').style.display = local && local.phase !== 'over' ? '' : 'none';
   if (params.get('partie')) $('codeInput').value = params.get('partie').toUpperCase().slice(0, 4);
 }
-for (const [seg, set] of [['segWin', v => winPts = v], ['segLocal', v => localN = v]]) {
+$('segTime').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.v === timePref));
+for (const [seg, set] of [['segWin', v => winPts = v], ['segLocal', v => localN = v], ['segTime', v => { timePref = v; store.set('brumes:turnTime', v); }]]) {
   $(seg).querySelectorAll('button').forEach(b => b.onclick = () => { $(seg).querySelectorAll('button').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); set(+b.dataset.v); });
 }
 $('btnCreate').onclick = createOnline;
@@ -404,7 +480,7 @@ $('btnJoin').onclick = () => joinOnline($('codeInput').value);
 $('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinOnline($('codeInput').value); });
 $('btnLocal').onclick = () => startLocal(localN);
 $('btnResume').onclick = () => { const last = store.get('brumes:last'); if (!requireName()) return; joinOnline(last.code, last.state); };
-$('btnResumeLocal').onclick = () => { leave(); session = { mode: 'local', state: store.get('brumes:local') }; hideOverlays(); resetCamera(); onNewState(session.state, [], false); };
+$('btnResumeLocal').onclick = () => { leave(); deadline = 0; timerKey = null; session = { mode: 'local', state: store.get('brumes:local') }; hideOverlays(); resetCamera(); onNewState(session.state, [], false); };
 
 /* Installation sur l'écran d'accueil */
 let installEvt = null;
@@ -422,4 +498,4 @@ goHome();
 if (params.get('partie')) $('codeInput').focus();
 
 /* Accès pour les tests automatiques */
-window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads };
+window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads, setTurnTime };

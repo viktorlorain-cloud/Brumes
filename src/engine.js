@@ -146,11 +146,11 @@ export function generateIsland(seed, big = false) {
 /* ---------- Création d'une partie ---------- */
 /* seats : [{ clientId, name }] dans l'ordre des places */
 /* quickBuild : les joueurs peuvent construire pendant le tour des autres (parties en ligne à 5-6) */
-export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false }) {
+export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false, turnTime = 0 }) {
   const n = seats.length;
   const isl = generateIsland(seed, n > 4);
   const S = {
-    v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, quickBuild, ...isl,
+    v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, quickBuild, turnTime, timerLeftMs: null, ...isl,
     players: seats.map((s, i) => ({ id: i, clientId: s.clientId || null, nom: s.name || PLAYER_DEFS[i].nom, col: PLAYER_DEFS[i].col,
       res: Object.fromEntries(RES.map(r => [r, 0])), fortune: 0, built: { sentier: 0, camp: 0, bastion: 0 } })),
     bank: Object.fromEntries(RES.map(r => [r, n > 4 ? 24 : 19])),
