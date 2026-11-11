@@ -11,7 +11,7 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let renderer, scene, camera, sea, sun, world, markers, shallows, view = null, seaTarget = SEA_BASE.clone();
-let extent = 4.33; // demi-largeur de l'île, recalculée à chaque plateau
+let extent = 4.33, extentZ = 4; // demi-largeur et demi-hauteur de l'île, recalculées à chaque plateau
 let tapHandler = () => {};
 
 export function initView(canvas) {
@@ -346,7 +346,8 @@ function roadMesh(eid, pid, fromVid) {
 export function buildView(state) {
   S = state;
   extent = Math.max(...S.tiles.map(t => Math.abs(t.x))) + 0.87;
-  shallows.scale.setScalar(extent + 1);
+  extentZ = Math.max(...S.tiles.map(t => Math.abs(t.z))) + 1;
+  shallows.scale.set(extent + 1, extentZ + 1, 1); // disque couché : son axe y suit la profondeur de l'île
   layoutCamera();
   world.clear(); markers.clear(); tweens.length = 0;
   view = { portSpots: [], tiles: [], vertexObjs: new Map(), roadObjs: new Map(), robber: null, phare: null, gameId: S.gameId };
@@ -579,7 +580,8 @@ function placeCamera(cam, z, p) {
   const need = 2 * extent + (cam.aspect < 0.75 ? 0.75 : 2.5);
   const vfov = THREE.MathUtils.degToRad(cam.fov);
   const hfov = 2 * Math.atan(Math.tan(vfov / 2) * cam.aspect);
-  const dist = Math.max((need / 2) / Math.tan(hfov / 2), (need * 0.95 / 2) / Math.tan(vfov / 2)) * z;
+  const needZ = (2 * extentZ + 0.4) / (cam.aspect < 0.75 ? 0.74 : 0.9); // place pour les fiches en haut et la barre en bas
+  const dist = Math.max((need / 2) / Math.tan(hfov / 2), (Math.max(need * 0.95, needZ) / 2) / Math.tan(vfov / 2)) * z;
   const tilt = THREE.MathUtils.degToRad(63);
   cam.position.set(p.x, Math.sin(tilt) * dist, p.y + 0.35 + Math.cos(tilt) * dist);
   cam.lookAt(p.x, 0, p.y + 0.35);
@@ -601,7 +603,7 @@ function groundAt(x, y, z = zoomT, p = panT) {
   return _ray.ray.intersectPlane(ground, _hit) ? _hit.clone() : null;
 }
 function clampPan(v) {
-  const lim = 0.25 + extent * (1 - Math.min(1, zoomT)) * 1.35;
+  const lim = 0.25 + Math.max(extent, extentZ) * (1 - Math.min(1, zoomT)) * 1.35;
   v.x = THREE.MathUtils.clamp(v.x, -lim, lim); v.y = THREE.MathUtils.clamp(v.y, -lim, lim);
 }
 /* Zoome vers zoomNew en gardant fixe le point du plateau situé sous (x, y) */

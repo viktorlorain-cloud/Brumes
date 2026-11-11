@@ -93,11 +93,57 @@ const NEIGH = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 function axialToXZ(q, r) { return { x: SIZE * Math.sqrt(3) * (q + r / 2), z: SIZE * 1.5 * r }; }
 
 const isCorner = (q, r, R) => { const s = -q - r; return [Math.abs(q), Math.abs(r), Math.abs(s)].filter(v => v === R).length === 2 && [q, r, s].includes(0); };
-export function generateIsland(seed, big = false) {
+/* ---------- Cartes ----------
+   Chaque carte fait pousser l'île à partir du Phare, case par case, en ajoutant toujours la case
+   de la bordure qui a le meilleur score : l'île reste d'un seul tenant et garde la même taille
+   (19 cases, 31 à 5-6 joueurs). Seule la forme change. */
+export const MAPS = [
+  { id: 'classique', nom: "L'Archipel", desc: 'Île ronde, le Phare au centre' },
+  { id: 'jumelles', nom: 'Les Jumelles', desc: 'Deux îles reliées par le Phare' },
+  { id: 'croissant', nom: 'Le Croissant', desc: 'Une baie, le Phare sur la rive' },
+  { id: 'longue', nom: 'La Longue', desc: 'Une île étirée du nord au sud' },
+  { id: 'sauvage', nom: 'Île sauvage', desc: 'Une forme différente à chaque partie' },
+];
+function islandCells(mapId, big) {
+  const N = big ? 31 : 19;
+  if (mapId === 'classique' || !MAPS.some(m => m.id === mapId)) {
+    const R = big ? 3 : 2, out = [];
+    for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) if (Math.abs(q + r) <= R && !(big && isCorner(q, r, R))) out.push([q, r]);
+    return out;
+  }
+  const k = big ? 1.28 : 1;
+  const noise = new Map();
+  const score = (q, r) => {
+    const { x, z } = axialToXZ(q, r);
+    if (mapId === 'jumelles') return Math.min(Math.hypot(x * 1.15, z + 2.6 * k), Math.hypot(x * 1.15, z - 2.6 * k));
+    if (mapId === 'longue') return Math.hypot(x * 1.9, z * 0.75);
+    if (mapId === 'croissant') { const bay = Math.hypot(x - 0.2, z + 2.7 * k); return bay < 2.1 * k ? 99 : Math.hypot(x, z + 0.9 * k) * 0.9 - bay * 0.25; }
+    const key = `${q},${r}`; if (!noise.has(key)) noise.set(key, rand() * 1.9);
+    return Math.hypot(x, z) + noise.get(key);
+  };
+  const cells = new Map([['0,0', [0, 0]]]);
+  while (cells.size < N) {
+    let best = null, bs = Infinity;
+    for (const [q, r] of cells.values()) for (const [dq, dr] of NEIGH) {
+      const c = [q + dq, r + dr], key = c.join(); if (cells.has(key)) continue;
+      const sc = score(c[0], c[1]); if (sc < bs) { bs = sc; best = c; }
+    }
+    cells.set(best.join(), best);
+  }
+  return [...cells.values()];
+}
+/* Nombre de tuiles par ressource et jetons numérotés, à la taille de l'île */
+function spread(weights, n) {
+  const tot = Object.values(weights).reduce((a, b) => a + b, 0), out = {};
+  const rows = Object.entries(weights).map(([k, w]) => { const exact = w * n / tot; out[k] = Math.floor(exact); return [k, exact - out[k]]; });
+  let left = n - Object.values(out).reduce((a, b) => a + b, 0);
+  rows.sort((a, b) => b[1] - a[1]); for (let i = 0; left > 0; i++, left--) out[rows[i % rows.length][0]]++;
+  return out;
+}
+export function generateIsland(seed, big = false, mapId = 'classique') {
   const saved = rand; rand = mulberry32(seed);
-  const R = big ? 3 : 2;
   const tiles = [];
-  for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) if (Math.abs(q + r) <= R && !(big && isCorner(q, r, R))) {
+  for (const [q, r] of islandCells(mapId, big)) {
     const p = axialToXZ(q, r);
     tiles.push({ id: tiles.length, q, r, x: p.x, z: p.z, terrain: null, number: null, revealed: false, neighbors: [], vertices: [] });
   }
@@ -106,7 +152,7 @@ export function generateIsland(seed, big = false) {
   const center = tiles.find(t => t.q === 0 && t.r === 0);
   const land = tiles.filter(t => t !== center);
 
-  const counts = big ? TERRAIN_COUNTS_BIG : TERRAIN_COUNTS;
+  const counts = land.length === 18 ? TERRAIN_COUNTS : land.length === 30 ? TERRAIN_COUNTS_BIG : spread(TERRAIN_COUNTS, land.length);
   const bag = []; for (const r of RES) for (let i = 0; i < counts[r]; i++) bag.push(r);
   for (let a = 0; a < 20000; a++) {
     shuffle(bag); land.forEach((t, i) => t.terrain = bag[i]);
@@ -117,7 +163,8 @@ export function generateIsland(seed, big = false) {
   /* Numéros : règles strictes (pas de 6/8 voisins, pas de doublons voisins), puis on garde
      le tirage le mieux réparti : aucune intersection trop riche, les numéros rouges sur des
      ressources différentes, et des chances proches pour chaque ressource. */
-  const nums = (big ? NUMBERS_BIG : NUMBERS).slice();
+  const nums = land.length === 18 ? NUMBERS.slice() : land.length === 30 ? NUMBERS_BIG.slice()
+    : Object.entries(spread({ 2: 1, 3: 2, 4: 2, 5: 2, 6: 2, 8: 2, 9: 2, 10: 2, 11: 2, 12: 1 }, land.length)).flatMap(([n, c]) => Array(c).fill(+n));
   const corners = []; // les 3 tuiles autour de chaque intersection intérieure
   for (const t of land) for (let i = 0; i < 6; i++) {
     const a = t.neighbors.find(n => tiles[n].q === t.q + NEIGH[i][0] && tiles[n].r === t.r + NEIGH[i][1]);
@@ -181,15 +228,15 @@ export function generateIsland(seed, big = false) {
   }
   center.revealed = true; for (const n of center.neighbors) tiles[n].revealed = true;
   rand = saved;
-  return { tiles, vertices, edges, ports, center: center.id, big };
+  return { tiles, vertices, edges, ports, center: center.id, big, map: mapId };
 }
 
 /* ---------- Création d'une partie ---------- */
 /* seats : [{ clientId, name }] dans l'ordre des places */
 /* quickBuild : les joueurs peuvent construire pendant le tour des autres (parties en ligne à 5-6) */
-export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false, turnTime = 0 }) {
+export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false, turnTime = 0, map = 'classique' }) {
   const n = seats.length;
-  const isl = generateIsland(seed, n > 4);
+  const isl = generateIsland(seed, n > 4, map);
   const S = {
     v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, quickBuild, turnTime, timerLeftMs: null, ...isl,
     players: seats.map((s, i) => ({ id: i, clientId: s.clientId || null, nom: s.name || PLAYER_DEFS[i].nom, col: PLAYER_DEFS[i].col,

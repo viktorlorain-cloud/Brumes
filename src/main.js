@@ -1,6 +1,6 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
-  legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard } from './engine.js';
+  legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, generateIsland } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
 import { spriteSheet, icon } from './icons.js';
@@ -574,7 +574,7 @@ async function createOnline() {
   showOverlay('lobbyOverlay');
   if (!await connect(code, true)) return;
   const m = MODES[modeId];
-  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], mode: m.id, win: m.win, min: m.min, max: m.max, turnTime: timePref };
+  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], mode: m.id, win: m.win, min: m.min, max: m.max, turnTime: timePref, map: mapId };
   renderLobby(); broadcastLobby();
 }
 async function joinOnline(code, resumeState = null) {
@@ -603,19 +603,19 @@ function renderLobby() {
   const l = session.lobby; if (!l) return;
   const cap = l.max || MAX_PLAYERS, min = l.min || 2;
   $('lobbyCode').textContent = l.code;
-  $('lobbyMode').textContent = `${MODES[l.mode]?.nom || 'Partie'} · code à partager`;
+  $('lobbyMode').textContent = `${MODES[l.mode]?.nom || 'Partie'} · ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"}`;
   $('lobbySeats').innerHTML = l.seats.map((s, i) => `<li><span class="dot" style="background:${PLAYER_DEFS[i].col}"></span><b>${esc(s.name)}</b>${s.clientId === l.hostId ? '<small>hôte</small>' : ''}${s.clientId === ME.id ? '<small>vous</small>' : ''}${session.peers.has(s.clientId) ? '' : '<small class="off">hors ligne</small>'}</li>`).join('') +
     Array.from({ length: Math.max(0, cap - l.seats.length) }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
   $('btnLaunch').disabled = l.seats.length < min;
-  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
+  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, carte ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"}, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
 $('btnLaunch').onclick = () => {
   const l = session.lobby; if (!session.isHost || l.seats.length < (l.min || 2)) return;
-  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, turnTime: l.turnTime || 0 });
+  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, turnTime: l.turnTime || 0, map: l.map || 'classique' });
   session.lobby = null; session.state = st; st.seq = 1;
   deadline = 0; timerKey = null; syncTimer(st);
   session.room.send({ type: 'state', state: st, events: [] });
@@ -685,7 +685,7 @@ function startLocal(n) {
   leave();
   const seats = PLAYER_DEFS.slice(0, n).map(d => ({ name: d.nom }));
   deadline = 0; timerKey = null;
-  session = { mode: 'local', state: createGame({ seats, win: MODES[modeId].win, turnTime: timePref }) };
+  session = { mode: 'local', state: createGame({ seats, win: MODES[modeId].win, turnTime: timePref, map: mapId }) };
   hideOverlays(); resetCamera(); onNewState(session.state, [], false);
   toast('La brume cache les terrains. Les numéros restent visibles.', 3600);
 }
@@ -698,6 +698,24 @@ const MODES = {
   expedition: { id: 'expedition', nom: 'Expédition', min: 3, max: 4, win: 10, min_: 30, ico: 'camp',    tag: '' },
   grande:     { id: 'grande',     nom: 'Grande île', min: 5, max: 6, win: 10, min_: 40, ico: 'phare',   tag: '' },
 };
+/* Cartes : vignette dessinée à partir de la vraie forme de l'île */
+let mapId = store.get(KEY + 'map', 'classique');
+if (!MAPS.some(m => m.id === mapId)) mapId = 'classique';
+const TERRAIN_TINT = { bois: '#3d7a46', pierre: '#c0683c', lin: '#98b957', grain: '#dfac45', cristal: '#7c879e', phare: '#ffcf6b' };
+const thumbs = {};
+function mapThumb(id) {
+  if (thumbs[id]) return thumbs[id];
+  const isl = generateIsland(id === 'sauvage' ? 7 : 20261111, false, id);
+  const xs = isl.tiles.map(t => t.x), zs = isl.tiles.map(t => t.z);
+  const minX = Math.min(...xs) - 1, maxX = Math.max(...xs) + 1, minZ = Math.min(...zs) - 1.1, maxZ = Math.max(...zs) + 1.1;
+  const hex = (cx, cz) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30); return `${(cx + 0.95 * Math.cos(a)).toFixed(2)},${(cz + 0.95 * Math.sin(a)).toFixed(2)}`; }).join(' ');
+  const body = isl.tiles.map(t => `<polygon points="${hex(t.x, t.z)}" fill="${id === 'sauvage' && t.terrain !== 'phare' ? '#5d7482' : TERRAIN_TINT[t.terrain]}"/>`).join('');
+  return (thumbs[id] = `<svg viewBox="${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}" aria-hidden="true">${body}${id === 'sauvage' ? `<text x="${(minX + maxX) / 2}" y="${(minZ + maxZ) / 2 + 1.1}" text-anchor="middle" font-size="3.2" font-family="Fredoka" font-weight="600" fill="#fff">?</text>` : ''}</svg>`);
+}
+function renderMaps() {
+  $('maps').innerHTML = MAPS.map(m => `<button type="button" class="mapCard ${m.id === mapId ? 'sel' : ''}" data-map="${m.id}">${mapThumb(m.id)}<b>${m.nom}</b><small>${m.desc}</small></button>`).join('');
+  $('maps').querySelectorAll('.mapCard').forEach(b => b.onclick = () => { mapId = b.dataset.map; store.set(KEY + 'map', mapId); renderMaps(); });
+}
 let homeTab = store.get(KEY + 'tab', 'online'), modeId = store.get(KEY + 'mode', 'expedition'), localN = 0, timePref = store.get(KEY + 'turnTime', 90);
 if (!MODES[modeId]) modeId = 'expedition';
 function requireName() {
@@ -730,7 +748,7 @@ function renderModes() {
 }
 function renderHome() {
   $('nameInput').value = ME.name || '';
-  renderAvatar(); renderModes();
+  renderAvatar(); renderModes(); renderMaps();
   if (params.get('partie')) { homeTab = 'online'; renderModes(); $('codeInput').value = params.get('partie').toUpperCase().slice(0, 4); }
 }
 $('nameInput').addEventListener('input', renderAvatar);
