@@ -1,6 +1,6 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
-  legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, generateIsland } from './engine.js';
+  legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, SIZES, generateIsland } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
 import { spriteSheet, icon } from './icons.js';
@@ -237,7 +237,7 @@ function suggestions(st, me) {
   return out;
 }
 let closedAt = 0; // un toucher qui ferme un panneau ne construit rien
-function refreshAll() { renderHUD(); refreshInteraction(); renderDiscard(); }
+function refreshAll() { renderHUD(); refreshInteraction(); renderDiscard(); renderClaim(); }
 
 /* ---------- Défausse sur un 7 : chaque joueur concerné choisit ses cartes ---------- */
 let discardPick = {}, discardFor = null;
@@ -664,7 +664,7 @@ async function createOnline() {
   showOverlay('lobbyOverlay');
   if (!await connect(code, true)) return;
   const m = MODES[modeId];
-  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], mode: m.id, win: m.win, min: m.min, max: m.max, turnTime: timePref, map: mapId };
+  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], mode: m.id, win: m.win, min: m.min, max: m.max, turnTime: timePref, map: mapId, size: sizeId };
   renderLobby(); broadcastLobby();
 }
 async function joinOnline(code, resumeState = null) {
@@ -693,19 +693,20 @@ function renderLobby() {
   const l = session.lobby; if (!l) return;
   const cap = l.max || MAX_PLAYERS, min = l.min || 2;
   $('lobbyCode').textContent = l.code;
-  $('lobbyMode').textContent = `${MODES[l.mode]?.nom || 'Partie'} · ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"}`;
+  $('lobbyMode').textContent = `${MODES[l.mode]?.nom || 'Partie'} · ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"} · ${SIZES.find(x => x.id === l.size)?.nom || 'Normale'}`;
   $('lobbySeats').innerHTML = l.seats.map((s, i) => `<li><span class="dot" style="background:${PLAYER_DEFS[i].col}"></span><b>${esc(s.name)}</b>${s.clientId === l.hostId ? '<small>hôte</small>' : ''}${s.clientId === ME.id ? '<small>vous</small>' : ''}${session.peers.has(s.clientId) ? '' : '<small class="off">hors ligne</small>'}</li>`).join('') +
     Array.from({ length: Math.max(0, cap - l.seats.length) }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
   $('btnLaunch').disabled = l.seats.length < min;
-  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, carte ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"}, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
+  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, carte ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"} (${(SIZES.find(x => x.id === l.size)?.nom || 'Normale').toLowerCase()}), ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
+$('btnClaimWatch').onclick = () => { claimDismissed = S()?.gameId; $('claimOverlay').classList.remove('show'); };
 $('btnLaunch').onclick = () => {
   const l = session.lobby; if (!session.isHost || l.seats.length < (l.min || 2)) return;
-  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, turnTime: l.turnTime || 0, map: l.map || 'classique' });
+  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, turnTime: l.turnTime || 0, map: l.map || 'classique', size: l.size || 'normale' });
   session.lobby = null; session.state = st; st.seq = 1;
   deadline = 0; timerKey = null; syncTimer(st);
   session.room.send({ type: 'state', state: st, events: [] });
@@ -717,9 +718,17 @@ function onMessage(m) {
   if (!session) return;
   if (m.to && m.to !== ME.id) return;
   if (m.type === 'hello' && session.isHost) {
-    if (session.state) { syncTimer(session.state); session.room.send({ type: 'state', state: session.state, events: [] }); return; }
+    if (session.state) {
+      // Même nom qu'un joueur déconnecté : on lui rend sa place au lieu d'en faire un spectateur
+      const st = session.state, known = st.players.some(p => p.clientId === m.from);
+      const same = !known && m.name && st.players.find(p => p.nom.trim().toLowerCase() === m.name.trim().toLowerCase() && !session.peers.has(p.clientId));
+      if (same) { reassignSeat(same.id, m.from); return; }
+      syncTimer(st); session.room.send({ type: 'state', state: st, events: [] }); return;
+    }
     const l = session.lobby; if (!l) return;
-    const seat = l.seats.find(s => s.clientId === m.from);
+    let seat = l.seats.find(s => s.clientId === m.from);
+    // Dans le salon aussi : un joueur qui revient avec le même nom reprend sa place
+    if (!seat && m.name) { seat = l.seats.find(s => s.name.trim().toLowerCase() === m.name.trim().toLowerCase() && !session.peers.has(s.clientId)); if (seat) seat.clientId = m.from; }
     if (seat) seat.name = m.name || seat.name;
     else if (l.seats.length < (l.max || MAX_PLAYERS)) l.seats.push({ clientId: m.from, name: m.name || PLAYER_DEFS[l.seats.length].nom });
     else { session.room.send({ type: 'error', to: m.from, msg: `La partie est complète (${l.max || MAX_PLAYERS} joueurs).` }); return; }
@@ -745,14 +754,45 @@ function onMessage(m) {
     onNewState(st, m.events || [], sequential);
     return;
   }
+  if (m.type === 'claim' && session.isHost && session.state) {
+    const st = session.state, q = st.players[m.pid];
+    if (!q) return;
+    if (q.clientId !== m.from && session.peers.has(q.clientId)) { session.room.send({ type: 'error', to: m.from, msg: `${q.nom} est encore connecté : choisissez une autre place.` }); return; }
+    reassignSeat(m.pid, m.from); return;
+  }
   if (m.type === 'error') { waiting = false; clearTimeout(waitTimer); toast(m.msg, 3500); refreshAll(); }
 }
 
+/* Rendre une place à un joueur qui revient (nouveau téléphone, appli réinstallée, autre navigateur) */
+function reassignSeat(pid, clientId) {
+  const st = session.state, q = st.players[pid];
+  const old = st.players.findIndex(p => p.clientId === clientId);
+  if (old >= 0 && old !== pid) st.players[old].clientId = null;
+  q.clientId = clientId; st.seq++;
+  const events = [{ k: 'toast', msg: `${q.nom} est de retour dans la partie` }];
+  session.room.send({ type: 'state', state: st, events });
+  onNewState(st, events, true);
+}
+/* Arrivé dans une partie en cours sans y avoir de place : on propose de reprendre celle d'un joueur */
+let claimDismissed = null;
+function renderClaim() {
+  const st = S(), ov = $('claimOverlay');
+  const need = session?.mode === 'online' && st && st.phase !== 'over' && myPid() < 0 && claimDismissed !== st.gameId;
+  if (!need) { ov.classList.remove('show'); return; }
+  const rows = st.players.map(q => {
+    const on = session.peers.has(q.clientId);
+    return `<button type="button" class="seat ${on ? 'on' : ''}" data-pid="${q.id}" ${on ? 'disabled' : ''}><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}</b><small>${on ? 'connecté' : 'déconnecté · reprendre'}</small></button>`;
+  }).join('');
+  if ($('claimList').dataset.html === rows) { if (!ov.classList.contains('show')) ov.classList.add('show'); return; }
+  $('claimList').innerHTML = rows; $('claimList').dataset.html = rows;
+  $('claimList').querySelectorAll('.seat').forEach(b => b.onclick = () => { session.room.send({ type: 'claim', from: ME.id, pid: +b.dataset.pid }); toast('Reconnexion…'); });
+  if (!ov.classList.contains('show')) { for (const o of document.querySelectorAll('.overlay')) o.classList.remove('show'); ov.classList.add('show'); }
+}
 function onPeers(ids) {
   if (!session) return;
   session.peers = new Set(ids);
   if (session.lobby) renderLobby();
-  if (session.state) renderHUD();
+  if (session.state) { renderHUD(); renderClaim(); }
   // Si l'hôte disparaît pendant la partie, le joueur connecté le mieux placé reprend l'arbitrage
   const st = S();
   if (!st || session.isHost || !st.hostId || session.peers.has(st.hostId)) { clearTimeout(takeoverTimer); takeoverTimer = null; return; }
@@ -775,7 +815,7 @@ function startLocal(n) {
   leave();
   const seats = PLAYER_DEFS.slice(0, n).map(d => ({ name: d.nom }));
   deadline = 0; timerKey = null;
-  session = { mode: 'local', state: createGame({ seats, win: MODES[modeId].win, turnTime: timePref, map: mapId }) };
+  session = { mode: 'local', state: createGame({ seats, win: MODES[modeId].win, turnTime: timePref, map: mapId, size: sizeId }) };
   hideOverlays(); resetCamera(); onNewState(session.state, [], false);
   toast('La brume cache les terrains. Les numéros restent visibles.', 3600);
 }
@@ -789,7 +829,8 @@ const MODES = {
   grande:     { id: 'grande',     nom: 'Grande île', min: 5, max: 6, win: 10, min_: 40, ico: 'phare',   tag: '' },
 };
 /* Cartes : vignette dessinée à partir de la vraie forme de l'île */
-let mapId = store.get(KEY + 'map', 'classique');
+let mapId = store.get(KEY + 'map', 'classique'), sizeId = store.get(KEY + 'size', 'normale');
+if (!SIZES.some(x => x.id === sizeId)) sizeId = 'normale';
 if (!MAPS.some(m => m.id === mapId)) mapId = 'classique';
 const TERRAIN_TINT = { bois: '#3d7a46', pierre: '#c0683c', lin: '#98b957', grain: '#dfac45', cristal: '#7c879e', phare: '#ffcf6b' };
 const thumbs = {};
@@ -805,6 +846,7 @@ function mapThumb(id) {
 function renderMaps() {
   $('maps').innerHTML = MAPS.map(m => `<button type="button" class="mapCard ${m.id === mapId ? 'sel' : ''}" data-map="${m.id}">${mapThumb(m.id)}<b>${m.nom}</b><small>${m.desc}</small></button>`).join('');
   $('maps').querySelectorAll('.mapCard').forEach(b => b.onclick = () => { mapId = b.dataset.map; store.set(KEY + 'map', mapId); renderMaps(); });
+  $('segSize').querySelectorAll('button').forEach(b => { b.classList.toggle('sel', b.dataset.v === sizeId); b.onclick = () => { sizeId = b.dataset.v; store.set(KEY + 'size', sizeId); renderMaps(); }; });
 }
 let homeTab = store.get(KEY + 'tab', 'online'), modeId = store.get(KEY + 'mode', 'expedition'), localN = 0, timePref = store.get(KEY + 'turnTime', 90);
 if (!MODES[modeId]) modeId = 'expedition';

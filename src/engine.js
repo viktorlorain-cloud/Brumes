@@ -104,20 +104,27 @@ export const MAPS = [
   { id: 'longue', nom: 'La Longue', desc: 'Une île étirée du nord au sud' },
   { id: 'sauvage', nom: 'Île sauvage', desc: 'Une forme différente à chaque partie' },
 ];
-function islandCells(mapId, big) {
-  const N = big ? 31 : 19;
-  if (mapId === 'classique' || !MAPS.some(m => m.id === mapId)) {
+/* Tailles : nombre de cases (Phare compris) selon le nombre de joueurs */
+export const SIZES = [
+  { id: 'petite', nom: 'Petite', n: [15, 25] },
+  { id: 'normale', nom: 'Normale', n: [19, 31] },
+  { id: 'grande', nom: 'Grande', n: [25, 37] },
+];
+function islandCells(mapId, big, size = 'normale') {
+  const N = (SIZES.find(x => x.id === size) || SIZES[1]).n[big ? 1 : 0];
+  if ((mapId === 'classique' || !MAPS.some(m => m.id === mapId)) && N === (big ? 31 : 19)) {
     const R = big ? 3 : 2, out = [];
     for (let q = -R; q <= R; q++) for (let r = -R; r <= R; r++) if (Math.abs(q + r) <= R && !(big && isCorner(q, r, R))) out.push([q, r]);
     return out;
   }
-  const k = big ? 1.28 : 1;
+  const k = Math.sqrt(N / 19);
   const noise = new Map();
   const score = (q, r) => {
     const { x, z } = axialToXZ(q, r);
     if (mapId === 'jumelles') return Math.min(Math.hypot(x * 1.15, z + 2.6 * k), Math.hypot(x * 1.15, z - 2.6 * k));
     if (mapId === 'longue') return Math.hypot(x * 1.9, z * 0.75);
     if (mapId === 'croissant') { const bay = Math.hypot(x - 0.2, z + 2.7 * k); return bay < 2.1 * k ? 99 : Math.hypot(x, z + 0.9 * k) * 0.9 - bay * 0.25; }
+    if (mapId !== 'sauvage') return Math.hypot(x, z) + (Math.abs(q) + Math.abs(r)) * 0.001; // île ronde
     const key = `${q},${r}`; if (!noise.has(key)) noise.set(key, rand() * 1.9);
     return Math.hypot(x, z) + noise.get(key);
   };
@@ -140,10 +147,10 @@ function spread(weights, n) {
   rows.sort((a, b) => b[1] - a[1]); for (let i = 0; left > 0; i++, left--) out[rows[i % rows.length][0]]++;
   return out;
 }
-export function generateIsland(seed, big = false, mapId = 'classique') {
+export function generateIsland(seed, big = false, mapId = 'classique', size = 'normale') {
   const saved = rand; rand = mulberry32(seed);
   const tiles = [];
-  for (const [q, r] of islandCells(mapId, big)) {
+  for (const [q, r] of islandCells(mapId, big, size)) {
     const p = axialToXZ(q, r);
     tiles.push({ id: tiles.length, q, r, x: p.x, z: p.z, terrain: null, number: null, revealed: false, neighbors: [], vertices: [] });
   }
@@ -186,7 +193,8 @@ export function generateIsland(seed, big = false, mapId = 'classique') {
     for (const r of RES) {
       const own = land.filter(t => t.terrain === r);
       const reds = own.filter(t => t.number === 6 || t.number === 8).length;
-      if (reds > (big ? 2 : 1)) score += 3 * (reds - (big ? 2 : 1));
+      const maxReds = Math.max(1, Math.round(land.length / 15));
+      if (reds > maxReds) score += 3 * (reds - maxReds);
       const mean = own.reduce((s, t) => s + PIPS(t.number), 0) / own.length;
       score += Math.max(0, Math.abs(mean - avg) - 0.6) * 2;
     }
@@ -217,7 +225,10 @@ export function generateIsland(seed, big = false, mapId = 'classique') {
     const a = vertices[e.v[0]], b = vertices[e.v[1]];
     return { e, ang: Math.atan2((a.z + b.z) / 2, (a.x + b.x) / 2) };
   }).sort((p, q) => p.ang - q.ang);
-  const portTypes = shuffle(big ? ['3:1', '3:1', '3:1', '3:1', '3:1', ...RES, 'lin'] : ['3:1', '3:1', '3:1', '3:1', ...RES]);
+  // Ports : 9 sur l'île normale, 11 sur la grande île à 5-6, et à proportion pour les autres tailles
+  const nPortsWanted = land.length === 18 ? 9 : land.length === 30 ? 11 : Math.max(7, Math.round(land.length * 0.37));
+  const portTypes = shuffle(land.length === 30 ? ['3:1', '3:1', '3:1', '3:1', '3:1', ...RES, 'lin']
+    : [...RES, ...Array(Math.max(2, nPortsWanted - 5)).fill('3:1')]);
   const nPorts = portTypes.length;
   const offset = Math.floor(rand() * 3);
   const ports = [];
@@ -228,20 +239,20 @@ export function generateIsland(seed, big = false, mapId = 'classique') {
   }
   center.revealed = true; for (const n of center.neighbors) tiles[n].revealed = true;
   rand = saved;
-  return { tiles, vertices, edges, ports, center: center.id, big, map: mapId };
+  return { tiles, vertices, edges, ports, center: center.id, big, map: mapId, size };
 }
 
 /* ---------- Création d'une partie ---------- */
 /* seats : [{ clientId, name }] dans l'ordre des places */
 /* quickBuild : les joueurs peuvent construire pendant le tour des autres (parties en ligne à 5-6) */
-export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false, turnTime = 0, map = 'classique' }) {
+export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 1e9), code = null, hostId = null, quickBuild = false, turnTime = 0, map = 'classique', size = 'normale' }) {
   const n = seats.length;
-  const isl = generateIsland(seed, n > 4, map);
+  const isl = generateIsland(seed, n > 4, map, size);
   const S = {
     v: 1, gameId: `${seed}-${Date.now().toString(36)}`, seq: 0, code, hostId, seed, win, quickBuild, turnTime, timerLeftMs: null, ...isl,
     players: seats.map((s, i) => ({ id: i, clientId: s.clientId || null, nom: s.name || PLAYER_DEFS[i].nom, col: PLAYER_DEFS[i].col,
       res: Object.fromEntries(RES.map(r => [r, 0])), fortune: 0, built: { sentier: 0, camp: 0, bastion: 0 } })),
-    bank: Object.fromEntries(RES.map(r => [r, n > 4 ? 24 : 19])),
+    bank: Object.fromEntries(RES.map(r => [r, (n > 4 ? 24 : 19) + Math.max(0, isl.tiles.length - 1 - (n > 4 ? 30 : 18))])), // plus de cartes sur les grandes îles
     current: 0, phase: 'setup', round: 0,
     setupOrder: [...Array(n).keys(), ...[...Array(n).keys()].reverse()],
     setupStep: 0, setupSub: 'camp', lastCamp: null,

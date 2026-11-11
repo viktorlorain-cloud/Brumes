@@ -277,6 +277,11 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 #lobbySeats li small { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
 #lobbySeats li small.off { color: #ffb4a8; }
 #lobbySeats li.free { color: var(--ink-soft); background: transparent; border: 1px dashed var(--line); }
+.seat { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); text-align: left; font-size: 15px; }
+.seat b { margin-right: auto; }
+.seat small { font-size: 11.5px; color: var(--lamp); }
+.seat.on small { color: var(--ink-soft); }
+.seat:disabled { opacity: 0.55; cursor: default; }
 .preview { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; background: rgba(138, 109, 255, 0.18); border: 1px solid rgba(138, 109, 255, 0.55); color: var(--ink); text-decoration: none; font-size: 12.5px; }
 .preview span { color: #cdbfff; white-space: nowrap; }
 
@@ -385,6 +390,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
     <div id="modes" class="stack"></div>
     <div class="opts">
       <div class="field"><span>Carte</span><div class="mapRow" id="maps"></div></div>
+      <div class="field"><span>Taille de l'île</span><div class="seg" id="segSize"><button type="button" data-v="petite">Petite</button><button type="button" data-v="normale">Normale</button><button type="button" data-v="grande">Grande</button></div></div>
       <div class="field" id="localCountField" hidden><span>Nombre de joueurs (on se passe le téléphone)</span><div class="seg" id="segLocal"></div></div>
       <div class="field"><span>Temps par tour (∞ = sans limite)</span>
         <div class="seg" id="segTime"><button type="button" data-v="0">∞</button><button type="button" data-v="30">30 s</button><button type="button" data-v="60">60 s</button><button type="button" data-v="90">90 s</button><button type="button" data-v="120">2 min</button></div>
@@ -441,6 +447,17 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
     <p id="lobbyStatus">Connexion…</p>
     <button class="big" id="btnLaunch" type="button" style="display:none">Lancer la partie</button>
     <button class="ghost" id="btnLobbyLeave" type="button">Quitter</button>
+  </div>
+</div>
+
+<!-- Reprendre une place après une déconnexion -->
+<div class="overlay" id="claimOverlay">
+  <div class="sheet">
+    <span class="eyebrow">Partie en cours</span>
+    <h2>Qui êtes-vous ?</h2>
+    <p>Touchez votre nom pour reprendre votre place, vos cartes et vos constructions.</p>
+    <div class="stack" id="claimList"></div>
+    <button class="ghost" id="btnClaimWatch" type="button">Regarder seulement</button>
   </div>
 </div>
 
