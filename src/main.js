@@ -5,6 +5,10 @@ import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, view
 import { openRoom } from './net.js';
 
 const $ = id => document.getElementById(id);
+/* Version du build (injectée par scripts/build.mjs) : 'prod' ou 'preview' */
+const BUILD = typeof __BRUMES_BUILD__ !== 'undefined' ? __BRUMES_BUILD__ : { channel: 'prod', version: 'dev', date: new Date().toISOString(), sha: '' };
+const PREVIEW = BUILD.channel === 'preview';
+const KEY = PREVIEW ? 'brumes-preview:' : 'brumes:'; // sauvegardes séparées pour l'aperçu
 const params = new URLSearchParams(location.search);
 const TRANSPORT = params.get('transport') === 'bc' ? 'bc' : 'supabase';
 const store = {
@@ -13,8 +17,8 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch { /* rien */ } },
 };
 const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-const ME = { id: params.get('id') || store.get('brumes:id') || rid(), name: store.get('brumes:name', '') };
-if (!params.get('id')) store.set('brumes:id', ME.id);
+const ME = { id: params.get('id') || store.get(KEY + 'id') || rid(), name: store.get(KEY + 'name', store.get('brumes:name', '')) };
+if (!params.get('id')) store.set(KEY + 'id', ME.id);
 
 /* Session courante */
 let session = null; // { mode:'local'|'online', code, room, isHost, lobby, state, peers:Set, win }
@@ -120,8 +124,8 @@ function refreshAll(bumped) { renderHUD(bumped); refreshInteraction(); }
 function onNewState(state, events, sequential) {
   session.state = state;
   syncTimer(state);
-  if (session.mode === 'online') store.set('brumes:last', { code: session.code, state });
-  else store.set('brumes:local', state);
+  if (session.mode === 'online') store.set(KEY + 'last', { code: session.code, state });
+  else store.set(KEY + 'local', state);
   const animate = sequential && viewGameId() === state.gameId;
   if (animate) playEvents(state, events); else buildView(state);
   waiting = false; clearTimeout(waitTimer);
@@ -294,12 +298,12 @@ function openMenu() {
 $('btnMenuClose').onclick = hideOverlays;
 $('menuInvite').onclick = () => shareInvite(session.code);
 $('btnLeave').onclick = () => { leave(); goHome(); };
-$('btnAgain').onclick = () => { leave(); store.del('brumes:last'); store.del('brumes:local'); goHome(); };
+$('btnAgain').onclick = () => { leave(); store.del(KEY + 'last'); store.del(KEY + 'local'); goHome(); };
 
 /* ---------- Salons en ligne ---------- */
 const ALPH = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const newCode = () => Array.from({ length: 4 }, () => ALPH[Math.floor(Math.random() * ALPH.length)]).join('');
-const WEB_URL = 'https://viktorlorain-cloud.github.io/Brumes/';
+const WEB_URL = PREVIEW ? 'https://viktorlorain-cloud.github.io/Brumes/preview/' : 'https://viktorlorain-cloud.github.io/Brumes/';
 const APK_URL = 'https://github.com/viktorlorain-cloud/Brumes/releases/latest/download/Brumes.apk';
 const IN_APP = !!window.Capacitor;
 function inviteUrl(code) {
@@ -324,7 +328,7 @@ async function connect(code, isHost, fallbackState = null) {
   session = { mode: 'online', code, isHost, lobby: null, state: null, peers: new Set([ME.id]), room: null };
   $('lobbyStatus').textContent = 'Connexion…';
   try {
-    session.room = await openRoom(code, ME, { onMessage, onPeers }, TRANSPORT);
+    session.room = await openRoom(PREVIEW ? `preview-${code}` : code, ME, { onMessage, onPeers }, TRANSPORT);
   } catch (e) {
     toast('Connexion impossible. Vérifiez le réseau et réessayez.', 4000); session = null; goHome(); return false;
   }
@@ -456,15 +460,15 @@ function startLocal(n) {
 }
 
 /* ---------- Écran d'accueil ---------- */
-let winPts = 10, localN = 3, timePref = store.get('brumes:turnTime', 90);
+let winPts = 10, localN = 3, timePref = store.get(KEY + 'turnTime', 90);
 function requireName() {
   const n = $('nameInput').value.trim().slice(0, 12);
   if (!n) { toast('Choisissez un nom pour que vos amis vous reconnaissent'); $('nameInput').focus(); return false; }
-  ME.name = n; store.set('brumes:name', n); return true;
+  ME.name = n; store.set(KEY + 'name', n); return true;
 }
 function renderHome() {
   $('nameInput').value = ME.name || '';
-  const last = store.get('brumes:last'), local = store.get('brumes:local');
+  const last = store.get(KEY + 'last'), local = store.get(KEY + 'local');
   const canResume = last && last.state && last.state.phase !== 'over' && last.state.players.some(p => p.clientId === ME.id);
   $('btnResume').style.display = canResume ? '' : 'none';
   if (canResume) $('btnResume').textContent = `Reprendre la partie ${last.code}`;
@@ -472,15 +476,15 @@ function renderHome() {
   if (params.get('partie')) $('codeInput').value = params.get('partie').toUpperCase().slice(0, 4);
 }
 $('segTime').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.v === timePref));
-for (const [seg, set] of [['segWin', v => winPts = v], ['segLocal', v => localN = v], ['segTime', v => { timePref = v; store.set('brumes:turnTime', v); }]]) {
+for (const [seg, set] of [['segWin', v => winPts = v], ['segLocal', v => localN = v], ['segTime', v => { timePref = v; store.set(KEY + 'turnTime', v); }]]) {
   $(seg).querySelectorAll('button').forEach(b => b.onclick = () => { $(seg).querySelectorAll('button').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); set(+b.dataset.v); });
 }
 $('btnCreate').onclick = createOnline;
 $('btnJoin').onclick = () => joinOnline($('codeInput').value);
 $('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinOnline($('codeInput').value); });
 $('btnLocal').onclick = () => startLocal(localN);
-$('btnResume').onclick = () => { const last = store.get('brumes:last'); if (!requireName()) return; joinOnline(last.code, last.state); };
-$('btnResumeLocal').onclick = () => { leave(); deadline = 0; timerKey = null; session = { mode: 'local', state: store.get('brumes:local') }; hideOverlays(); resetCamera(); onNewState(session.state, [], false); };
+$('btnResume').onclick = () => { const last = store.get(KEY + 'last'); if (!requireName()) return; joinOnline(last.code, last.state); };
+$('btnResumeLocal').onclick = () => { leave(); deadline = 0; timerKey = null; session = { mode: 'local', state: store.get(KEY + 'local') }; hideOverlays(); resetCamera(); onNewState(session.state, [], false); };
 
 /* Installation sur l'écran d'accueil */
 let installEvt = null;
@@ -489,7 +493,13 @@ $('btnInstall').onclick = async () => { if (!installEvt) return; installEvt.prom
 const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 if (standalone || IN_APP) $('installHelp').style.display = 'none';
 if (!IN_APP && /Android/i.test(navigator.userAgent)) { $('btnApk').href = APK_URL; $('btnApk').style.display = ''; }
-if ('serviceWorker' in navigator && location.protocol === 'https:' && !IN_APP) navigator.serviceWorker.register('./sw.js').catch(() => null);
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !IN_APP && !PREVIEW) navigator.serviceWorker.register('./sw.js').catch(() => null);
+
+/* Aperçu de test : bandeau de version et lien vers les nouveautés */
+if (PREVIEW) {
+  const when = new Date(BUILD.date).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  for (const id of ['previewHome', 'previewMenu']) { const el = $(id); el.hidden = false; el.querySelector('b').textContent = `Aperçu de test · ${when}`; }
+}
 
 /* ---------- Démarrage ---------- */
 initView($('scene'));

@@ -1,7 +1,9 @@
 name: Mise en ligne
+# Publie la version publique (branche main) à la racine du site,
+# et l'aperçu de test (branche preview) dans /preview/.
 on:
   push:
-    branches: [main]
+    branches: [main, preview]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,17 +16,42 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Code de la version publique
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: prod
+          fetch-depth: 40
+      - name: Code de l'aperçu
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: preview
+          path: preview
+          fetch-depth: 40
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+      - name: Version publique
+        working-directory: prod
+        run: npm ci && npm run build
+      - name: Aperçu
+        if: hashFiles('preview/package.json') != ''
+        working-directory: preview
+        env:
+          BRUMES_CHANNEL: preview
+        run: npm ci && npm run build
+      - name: Assemblage du site
+        run: |
+          mkdir -p site && cp -r prod/dist/. site/
+          if [ -d preview/dist ]; then
+            mkdir -p site/preview && cp -r preview/dist/. site/preview/
+            rm -rf site/preview/telecharger
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
   deploy:
     needs: build
     runs-on: ubuntu-latest
