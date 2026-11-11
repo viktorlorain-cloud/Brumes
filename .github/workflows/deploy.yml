@@ -3,7 +3,10 @@ name: Mise en ligne
 # et l'aperçu de test (branche preview) dans /preview/.
 on:
   push:
-    branches: [main, preview]
+    branches: [main]
+  workflow_run:
+    workflows: [Aperçu]
+    types: [completed]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,6 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Code de la version publique
