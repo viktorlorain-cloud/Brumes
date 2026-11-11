@@ -41,6 +41,21 @@ export function initView(canvas) {
   requestAnimationFrame(loop);
 }
 export function onTap(fn) { tapHandler = fn; }
+let longPressHandler = () => {};
+export function onLongPress(fn) { longPressHandler = fn; }
+/* Construction sous le doigt (appui long) : camp ou bastion le plus proche, sinon sentier */
+function builtAt(x, y) {
+  const p = groundAt(x, y, zoom, pan); if (!p || !S) return null;
+  let best = null, bd = 0.3;
+  for (const v of S.vertices) if (v.building) { const d = Math.hypot(v.x - p.x, v.z - p.z); if (d < bd) { bd = d; best = { kind: 'vertex', id: v.id }; } }
+  if (best) return best;
+  bd = 0.24;
+  for (const e of S.edges) if (e.road != null) {
+    const a = S.vertices[e.v[0]], b = S.vertices[e.v[1]], d = Math.hypot((a.x + b.x) / 2 - p.x, (a.z + b.z) / 2 - p.z);
+    if (d < bd) { bd = d; best = { kind: 'edge', id: e.id }; }
+  }
+  return best;
+}
 
 const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 0.85, ...o });
 function shadowed(m) { m.castShadow = true; m.receiveShadow = true; return m; }
@@ -603,12 +618,21 @@ function updateCamera(dt) {
 }
 function setupInput(canvas) {
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), pointers = new Map();
-  let downAt = null, moved = false, pinch = null, lastMove = 0, lastTap = { t: 0, x: 0, y: 0 };
+  let downAt = null, moved = false, pinch = null, lastMove = 0, lastTap = { t: 0, x: 0, y: 0 }, longTimer = 0, longFired = false;
   const mid = () => { const [a, b] = [...pointers.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) }; };
   canvas.addEventListener('pointerdown', e => {
     canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     vel.set(0, 0); dragging = true;
-    if (pointers.size === 1) { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; moved = false; }
+    if (pointers.size === 1) {
+      downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; moved = false; longFired = false;
+      clearTimeout(longTimer);
+      longTimer = setTimeout(() => {
+        if (moved || pointers.size !== 1) return;
+        const hit = builtAt(downAt.x, downAt.y);
+        if (hit) { longFired = true; longPressHandler(hit.kind, hit.id, downAt.x, downAt.y); }
+      }, 450);
+    }
+    if (pointers.size > 1) clearTimeout(longTimer);
     if (pointers.size === 2) { const m = mid(); pinch = { d: m.d, z: zoomT, x: m.x, y: m.y }; moved = true; }
   });
   canvas.addEventListener('pointermove', e => {
@@ -641,7 +665,8 @@ function setupInput(canvas) {
     return pointers.size === 0;
   };
   canvas.addEventListener('pointerup', e => {
-    if (!end(e) || moved) return;
+    clearTimeout(longTimer);
+    if (!end(e) || moved || longFired) return;
     // Toucher simple : un emplacement lumineux d'abord
     if (markers.children.length) {
       ndc.set(e.clientX / window.innerWidth * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
@@ -657,7 +682,8 @@ function setupInput(canvas) {
       lastTap.t = 0;
     } else lastTap = { t: now, x: e.clientX, y: e.clientY };
   });
-  canvas.addEventListener('pointercancel', e => { end(e); });
+  canvas.addEventListener('pointercancel', e => { clearTimeout(longTimer); end(e); });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAround(e.clientX, e.clientY, zoomT * Math.exp(e.deltaY * 0.0015)); }, { passive: false });
 }
 

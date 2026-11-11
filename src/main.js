@@ -1,7 +1,7 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard } from './engine.js';
-import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
+import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
 import { spriteSheet, icon } from './icons.js';
 
@@ -137,7 +137,7 @@ function renderHUD() {
   document.body.classList.toggle('drawer-open', tradeOpen || buildOpen);
   if (tradeOpen) renderTrade();
   for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).classList.toggle('on', uiMode === m);
-  renderOffer(); renderTimer();
+  renderOffer(); renderTimer(); renderCosts();
   const call = document.querySelector('.pc.active .call');
   $('toasts').style.top = `${Math.round(Math.max($('top').getBoundingClientRect().bottom, call ? call.getBoundingClientRect().bottom : 0) + 8)}px`;
 }
@@ -382,6 +382,39 @@ for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBast
 $('btnBuild').onclick = () => { buildOpen = !buildOpen; tradeOpen = false; if (!buildOpen) uiMode = null; refreshAll(); };
 $('tideChip').onclick = () => { const st = S(); if (!st) return; const t = st.tide || st.nextTide; if (t) toast(`${st.tide ? '' : 'Au prochain tour : '}${tideDesc(t)}`, 4500); };
 $('btnMenu').onclick = () => openMenu();
+
+/* ---------- Coûts de construction : carte en haut à droite et appui long sur une pièce posée ---------- */
+const PIECES = {
+  sentier: { nom: 'Sentier', ico: 'sentier', pts: "pour s'étendre" },
+  camp: { nom: 'Camp', ico: 'camp', pts: '1 point' },
+  bastion: { nom: 'Bastion', ico: 'bastion', pts: '2 points · sur un camp' },
+};
+const costIcons = (st, k) => Object.entries(costOf(st, k)).flatMap(([r, n]) => Array(n).fill(icon(r))).join('');
+let costOpen = false;
+function renderCosts() {
+  const st = S(), panel = $('costPanel');
+  $('btnCosts').classList.toggle('on', costOpen);
+  if (!costOpen || !st) { panel.hidden = true; return; }
+  panel.hidden = false;
+  panel.innerHTML = '<h3>Coûts de construction</h3>' + Object.entries(PIECES).map(([k, p]) =>
+    `<div class="costRow">${icon(p.ico)}<span><b>${p.nom}</b><small>${p.pts}</small></span><span class="costs">${costIcons(st, k)}</span></div>`).join('') +
+    (st.tide?.type === 'chantier-sentier' ? '<div class="note">Marée en cours : le sentier coûte moins cher.</div>' : '');
+}
+$('btnCosts').onclick = () => { costOpen = !costOpen; renderCosts(); };
+$('costPanel').onclick = () => { costOpen = false; renderCosts(); };
+let tipTimer = 0;
+onLongPress((kind, id, x, y) => {
+  const st = S(); if (!st) return;
+  let k, owner;
+  if (kind === 'vertex') { const b = st.vertices[id].building; k = b.type; owner = b.owner; } else { k = 'sentier'; owner = st.edges[id].road; }
+  const p = PIECES[k], who = st.players[owner];
+  const tip = $('pieceTip');
+  tip.innerHTML = `<b>${p.nom} de ${esc(who.nom)}</b><small>${p.pts}</small><div class="costs">${costIcons(st, k)}</div>`;
+  tip.style.left = `${Math.min(window.innerWidth - 100, Math.max(100, x))}px`; tip.style.top = `${y}px`;
+  tip.hidden = false; tip.style.animation = 'none'; void tip.offsetWidth; tip.style.animation = '';
+  try { navigator.vibrate?.(15); } catch { /* indisponible */ }
+  clearTimeout(tipTimer); tipTimer = setTimeout(() => { tip.hidden = true; }, 2600);
+});
 
 /* ---------- Échanges : une seule section qui monte au-dessus de la barre ----------
    On touche ses cartes pour remplir « Je donne », on choisit « Je veux », puis Joueurs (proposition à tous)

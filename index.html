@@ -48,12 +48,32 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .ico.sm { width: 17px; height: 17px; display: inline-block; vertical-align: -3px; margin: 0 1px; }
 [hidden] { display: none !important; }
 body.drawer-open #hint { display: none; }
-body.home #top, body.home #bottom, body.home .menuBtn, body.home #hint, body.home #offerPanel { display: none; }
+body.home #top, body.home #bottom, body.home .menuBtn, body.home #costPanel, body.home #pieceTip, body.home #hint, body.home #offerPanel { display: none; }
 
 /* ===== Écran de jeu ===== */
 #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(8px + var(--safe-top)) 8px 0; display: grid; gap: 8px; pointer-events: none; }
 .menuBtn { position: fixed; top: calc(8px + var(--safe-top)); right: 8px; z-index: 5; width: 36px; height: 36px; border-radius: 11px; border: 1px solid var(--line); background: var(--panel); display: grid; place-items: center; padding: 0; box-shadow: var(--shadow); }
 .menuBtn .ico { width: 20px; height: 20px; filter: invert(1) brightness(1.6); }
+
+/* Carte des coûts (sous le menu) et bulle d'appui long sur une construction */
+.costBtn { top: calc(50px + var(--safe-top)); }
+.costBtn .ico { filter: none; width: 22px; height: 22px; }
+.costBtn.on { border-color: var(--lamp); }
+#costPanel { position: fixed; top: calc(92px + var(--safe-top)); right: 8px; z-index: 6; width: 262px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 10px 12px; display: grid; gap: 8px; animation: rise 0.15s ease-out; }
+#costPanel h3 { margin: 0; font-family: var(--display); font-weight: 500; font-size: 14px; color: var(--ink-soft); }
+.costRow { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 8px; }
+.costRow > .ico { width: 26px; height: 26px; }
+.costRow b { font-size: 13.5px; display: block; }
+.costRow small { font-size: 10.5px; color: var(--ink-soft); white-space: nowrap; }
+.costs { display: flex; gap: 1px; }
+.costs .ico { width: 19px; height: 19px; }
+#costPanel .note { font-size: 11px; color: #9fe0ff; }
+#pieceTip { position: fixed; z-index: 25; transform: translate(-50%, calc(-100% - 18px)); background: rgba(8, 18, 26, 0.95); border: 1px solid var(--line); border-radius: 12px; padding: 7px 11px; box-shadow: var(--shadow); white-space: nowrap; pointer-events: none; animation: toastIn 0.15s ease-out; }
+#pieceTip b { display: block; font-family: var(--display); font-weight: 500; font-size: 14px; }
+#pieceTip small { font-size: 11px; color: var(--ink-soft); }
+#pieceTip .costs { margin-top: 4px; }
+#pieceTip .costs .ico { width: 22px; height: 22px; }
+#pieceTip::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: rgba(8, 18, 26, 0.95); }
 
 /* Fiches joueurs : points, cartes, Fortune, pièces restantes ; bulle « étape + temps » sous le joueur actif */
 #players { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 5px; margin-right: 42px; pointer-events: auto; }
@@ -282,6 +302,9 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
   <button id="tideChip" type="button" hidden><span>≈</span><b id="tideTitle"></b><small id="tideWhen"></small></button>
 </div>
 <button type="button" class="menuBtn" id="btnMenu" aria-label="Menu de la partie"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
+<button type="button" class="menuBtn costBtn" id="btnCosts" aria-label="Coûts de construction"><svg class="ico" aria-hidden="true"><use href="#i-carte"/></svg></button>
+<div id="costPanel" hidden></div>
+<div id="pieceTip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
 <div id="dice"><div class="die" id="d1"></div><div class="die" id="d2"></div></div>
 <div id="hint"><span id="hintText"></span></div>
