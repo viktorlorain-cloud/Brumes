@@ -18,6 +18,8 @@ await build({
 });
 let html = readFileSync('index.html', 'utf8');
 if (channel === 'preview') html = html.replace('<title>Brumes</title>', '<title>Brumes · aperçu</title>');
+// Le script porte le numéro de version : le navigateur ne peut pas garder une ancienne copie avec la nouvelle page
+html = html.replace('src="./app.js"', `src="./app.js?v=${info.version}"`);
 writeFileSync('dist/index.html', html);
 cpSync('public', 'dist', { recursive: true });
 writeFileSync('dist/sw.js', readFileSync('public/sw.js', 'utf8').replace('__BUILD__', version));
