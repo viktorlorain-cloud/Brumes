@@ -87,59 +87,122 @@ function iconSprite(name, size = 0.42) {
 function ringPos(i, n, rad, rot = 0) { const a = rot + i / n * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
 function scaled(g, f) { const outer = new THREE.Group(); g.scale.setScalar(f); outer.add(g); outer.userData = g.userData; return outer; }
 
-/* ---------- Décors ---------- */
+/* ---------- Décors ----------
+   Chaque terrain se reconnaît d'un coup d'œil : forêt de sapins et tas de bûches, carrière de blocs taillés,
+   champs de lin en fleurs bleues, champs de blé et moulin, montagnes à cristaux. Une pastille avec l'icône
+   de la ressource est posée contre le jeton numéroté (elle reste cachée tant que la tuile est dans la brume). */
+function at(obj, x, y, z, ry = 0) { obj.position.set(x, y, z); obj.rotation.y = ry; return obj; }
+function slot(rad, a) { return [Math.cos(a) * rad, Math.sin(a) * rad]; }
+function pine(s, col) {
+  const g = new THREE.Group();
+  g.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.025 * s, 0.035 * s, 0.12 * s, 5), mat('#6b4a2e'))), 0, 0.06 * s, 0));
+  g.add(at(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.15 * s, 0.26 * s, 7), mat(col))), 0, 0.2 * s, 0));
+  g.add(at(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.11 * s, 0.22 * s, 7), mat(col))), 0, 0.32 * s, 0));
+  return g;
+}
+/* Champ : terre labourée et rangs de tiges (instanciées pour rester léger) surmontées d'un épi ou d'une fleur */
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _sc = new THREE.Vector3();
+function field(w, d, rows, cols, soil, stalkCol, head, headCol, h) {
+  const g = new THREE.Group();
+  g.add(at(shadowed(new THREE.Mesh(new THREE.BoxGeometry(w, 0.025, d), mat(soil))), 0, 0.012, 0));
+  const n = rows * cols;
+  const stalks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.008, 0.012, h, 4), mat(stalkCol), n);
+  const heads = new THREE.InstancedMesh(head, mat(headCol, headCol.startsWith('#6') ? { emissive: '#1f3d7a', emissiveIntensity: 0.5 } : {}), n);
+  let i = 0;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++, i++) {
+    const x = -w / 2 + (c + 0.5) * w / cols + (((r * 7 + c * 13) % 5) - 2) * 0.004, z = -d / 2 + (r + 0.5) * d / rows;
+    const tilt = (((r * 5 + c * 3) % 7) - 3) * 0.05, hh = h * (0.85 + ((r + c) % 3) * 0.08);
+    _e.set(tilt, 0, tilt * 0.6); _q.setFromEuler(_e); _sc.set(1, hh / h, 1);
+    stalks.setMatrixAt(i, _m4.compose(_v.set(x, 0.025 + hh / 2, z), _q, _sc));
+    _sc.set(1, 1, 1); heads.setMatrixAt(i, _m4.compose(_v.set(x + tilt * hh * 0.6, 0.025 + hh, z - tilt * hh * 0.4), _q, _sc));
+  }
+  stalks.castShadow = heads.castShadow = true;
+  g.add(stalks, heads);
+  return g;
+}
+function resBadge(res) {
+  const g = new THREE.Group();
+  g.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.04, 24), mat(RES_INFO[res].col, { flatShading: false }))), 0, 0.06, 0));
+  g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.045, 24), mat('#f6eedc', { flatShading: false })), 0, 0.064, 0));
+  const img = whenIcon(res, () => t.redraw());
+  const t = canvasTex(128, 128, (c, w, h) => { if (img.complete) c.drawImage(img, 8, 8, w - 16, h - 16); });
+  const ic = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.25), new THREE.MeshBasicMaterial({ map: t.tex, transparent: true }));
+  ic.rotation.x = -Math.PI / 2; ic.position.y = 0.088; g.add(ic);
+  g.position.set(0, 0, -0.42);
+  return g;
+}
 function makeDecor(terrain, rot) {
   const g = new THREE.Group();
   if (terrain === 'bois') {
-    for (let i = 0; i < 6; i++) {
-      const [x, z] = ringPos(i, 6, 0.6 + (i % 2) * 0.08, rot);
-      const s = 0.68 + ((i * 37) % 5) / 12;
-      const trunk = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.12, 5), mat('#6b4a2e')));
-      trunk.position.set(x, 0.06, z);
-      const top = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.13 * s, 0.38 * s, 6), mat(i % 2 ? '#2f6b3b' : '#3b8048')));
-      top.position.set(x, 0.12 + 0.19 * s, z);
-      g.add(trunk, top);
+    // Forêt de sapins sur deux rangs, avec un tas de bûches
+    for (let i = 0; i < 9; i++) {
+      const a = rot + i / 9 * Math.PI * 2; if (Math.abs(Math.sin(a) + 1) < 0.18) continue;
+      const [x, z] = slot(0.6 + (i % 2) * 0.12, a);
+      g.add(at(pine(0.85 + ((i * 37) % 5) / 10, i % 3 ? '#2f6b3b' : '#3d8a4a'), x, 0, z));
     }
+    const logs = new THREE.Group();
+    [[-0.06, 0.04], [0.06, 0.04], [0, 0.11]].forEach(([x, y]) => logs.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.26, 8), mat('#8a5a34'))), x, y, 0)));
+    logs.children.forEach(l => { l.rotation.z = Math.PI / 2; });
+    const [lx, lz] = slot(0.42, rot + 2.6); g.add(at(logs, lx, 0, lz, rot));
   } else if (terrain === 'pierre') {
-    for (let i = 0; i < 4; i++) {
-      const [x, z] = ringPos(i, 4, 0.58, rot);
-      const b = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12 + (i % 2) * 0.1, 0.16), mat(i % 2 ? '#a24f2b' : '#d27a4a')));
-      b.position.set(x, 0.08, z); b.rotation.y = i * 0.7; g.add(b);
-      const b2 = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.1), mat('#e39a6c')));
-      b2.position.set(x + 0.05, 0.2 + (i % 2) * 0.1, z); b2.rotation.y = i; g.add(b2);
+    // Carrière : piles de blocs taillés, gros rochers et une paroi entaillée
+    const block = (c) => shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.1), mat(c)));
+    for (let k = 0; k < 3; k++) {
+      const [x, z] = slot(0.58, rot + k * 2.1);
+      const pile = new THREE.Group();
+      [[-0.075, 0.04, 0], [0.075, 0.04, 0], [0, 0.12, 0], [-0.075, 0.04, 0.11], [0.075, 0.04, 0.11]].forEach(([bx, by, bz], j) => pile.add(at(block(j % 2 ? '#d9cbb4' : '#c9b89c'), bx, by, bz)));
+      g.add(at(pile, x, 0, z, rot + k));
+    }
+    for (let k = 0; k < 3; k++) {
+      const [x, z] = slot(0.62, rot + 1.05 + k * 2.1);
+      const r = shadowed(new THREE.Mesh(new THREE.DodecahedronGeometry(0.12 + (k % 2) * 0.04), mat('#8e8578')));
+      g.add(at(r, x, 0.08, z, k)); r.scale.y = 0.75;
     }
   } else if (terrain === 'lin') {
-    for (let i = 0; i < 9; i++) {
-      const [x, z] = ringPos(i, 9, 0.5 + (i % 3) * 0.1, rot);
-      const tuft = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22, 5), mat('#7fa44a')));
-      tuft.position.set(x, 0.11, z); g.add(tuft);
-      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 4), mat('#7aa8ff', { emissive: '#22406f' }));
-      fl.position.set(x, 0.24, z); g.add(fl);
+    // Champs de lin : rangs de tiges vertes à fleurs bleues, et une botte liée
+    for (let k = 0; k < 2; k++) {
+      const a = rot + k * Math.PI, [x, z] = slot(0.55, a);
+      const p = field(0.44, 0.3, 5, 9, '#6e5a3a', '#6f9a44', new THREE.SphereGeometry(0.02, 6, 4), '#6f9cff', 0.14);
+      g.add(at(p, x, 0, z, -a + Math.PI / 2));
     }
+    const [bx, bz] = slot(0.6, rot + Math.PI / 2);
+    const bundle = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.26, 8), mat('#c9b07a')));
+    g.add(at(bundle, bx, 0.13, bz));
+    const tie = at(new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.012, 4, 10), mat('#7a5a30')), bx, 0.14, bz);
+    tie.rotation.x = Math.PI / 2; g.add(tie);
   } else if (terrain === 'grain') {
-    for (let i = 0; i < 3; i++) {
-      const step = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.82 - i * 0.1, 0.84 - i * 0.1, 0.05, 6, 1, true, rot + i * 0.3, Math.PI * 0.9), mat(i % 2 ? '#c99632' : '#e8bd55', { side: THREE.DoubleSide })));
-      step.position.y = 0.03 + i * 0.05; g.add(step);
+    // Champs de blé dorés en rangs, meule de foin et petit moulin
+    for (let k = 0; k < 2; k++) {
+      const a = rot + k * 2.3, [x, z] = slot(0.56, a);
+      const ear = new THREE.CapsuleGeometry(0.012, 0.035, 2, 4);
+      g.add(at(field(0.44, 0.32, 6, 10, '#8a6a34', '#d9a83a', ear, k ? '#f6cf55' : '#ecc04a', 0.15), x, 0, z, -a + Math.PI / 2));
     }
-    for (let i = 0; i < 6; i++) {
-      const [x, z] = ringPos(i, 6, 0.62, rot + Math.PI);
-      const sheaf = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.2, 6), mat('#f2c860')));
-      sheaf.position.set(x, 0.1, z); g.add(sheaf);
-    }
+    const [hx, hz] = slot(0.6, rot + 4.4);
+    g.add(at(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.22, 8), mat('#e8c25c'))), hx, 0.11, hz));
+    const mill = new THREE.Group();
+    mill.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 8), mat('#efe6d2'))), 0, 0.15, 0));
+    mill.add(at(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.12, 8), mat('#a2462e'))), 0, 0.36, 0));
+    const blades = new THREE.Group(); blades.position.set(0, 0.28, 0.1);
+    for (let i = 0; i < 4; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.008), mat('#7a5a3a')); b.position.y = 0.1; const arm = new THREE.Group(); arm.rotation.z = i * Math.PI / 2 + 0.4; arm.add(b); blades.add(arm); }
+    mill.add(blades);
+    const [mx, mz] = slot(0.42, rot + 5.4); g.add(at(mill, mx, 0, mz, rot));
   } else if (terrain === 'cristal') {
-    [[0.55, rot], [0.6, rot + 2.2], [0.5, rot + 4.1]].forEach(([rad, a], i) => {
-      const x = Math.cos(a) * rad, z = Math.sin(a) * rad, h = 0.42 + i * 0.09;
-      const m = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.27, h, 5), mat('#6f7a8f')));
-      m.position.set(x, h / 2, z); g.add(m);
-      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.2, 5), mat('#eef3f8'));
-      cap.position.set(x, h - 0.08, z); g.add(cap);
+    // Montagnes enneigées et grappes de cristaux lumineux
+    [[0.58, rot], [0.62, rot + 2.2], [0.55, rot + 4.1]].forEach(([rad, a], i) => {
+      const [x, z] = slot(rad, a), h = 0.42 + i * 0.09;
+      g.add(at(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.27, h, 5), mat('#6f7a8f'))), x, h / 2, z));
+      g.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.2, 5), mat('#eef3f8')), x, h - 0.08, z));
     });
-    for (let i = 0; i < 3; i++) {
-      const [x, z] = ringPos(i, 3, 0.62, rot + 1.1);
-      const c = shadowed(new THREE.Mesh(new THREE.OctahedronGeometry(0.09), mat('#7ff0ff', { emissive: '#1aa6c4', emissiveIntensity: 0.9, roughness: 0.2 })));
-      c.position.set(x, 0.12, z); c.scale.y = 1.6; g.add(c);
+    const cmat = mat('#7ff0ff', { emissive: '#1aa6c4', emissiveIntensity: 0.9, roughness: 0.2 });
+    for (let k = 0; k < 3; k++) {
+      const [x, z] = slot(0.6, rot + 1.1 + k * 2.1);
+      for (let j = 0; j < 3; j++) {
+        const c = shadowed(new THREE.Mesh(new THREE.OctahedronGeometry(0.06 + (j === 0) * 0.03), cmat));
+        c.position.set(x + (j - 1) * 0.06, 0.1 + (j === 0) * 0.04, z + (j % 2) * 0.04); c.scale.y = 1.8; c.rotation.z = (j - 1) * 0.35; g.add(c);
+      }
     }
   }
+  if (RES.includes(terrain)) g.add(resBadge(terrain));
   return g;
 }
 function makeFog(rot) {
