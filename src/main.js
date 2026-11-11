@@ -1,8 +1,11 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
-import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions } from './view.js';
+import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
+import { spriteSheet, icon } from './icons.js';
+
+document.body.insertAdjacentHTML('afterbegin', spriteSheet());
 
 const $ = id => document.getElementById(id);
 /* Version du build (injectée par scripts/build.mjs) : 'prod' ou 'preview' */
@@ -26,21 +29,26 @@ let uiMode = null, waiting = false, waitTimer = null, takeoverTimer = null, last
 
 /* ---------- Messages et petits retours visuels ---------- */
 function toast(msg, ms = 2600) {
-  const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg; $('toasts').appendChild(d);
+  const d = document.createElement('div'); d.className = 'toast'; d.innerHTML = rich(msg); $('toasts').appendChild(d);
   while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
   setTimeout(() => d.remove(), ms);
 }
+/* Les messages du moteur citent les ressources par un symbole : on le remplace par notre icône */
+const SYMBOLS = { '🪵': 'bois', '🪨': 'pierre', '🧵': 'lin', '🌾': 'grain', '💎': 'cristal', '✦': 'fortune' };
+function rich(msg) { return esc(msg).replace(/🪵|🪨|🧵|🌾|💎|✦/gu, m => icon(SYMBOLS[m], 'ico sm')); }
+const PIPS_AT = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+function setDie(el, n) { el.innerHTML = Array.from({ length: 9 }, (_, i) => `<i class="${PIPS_AT[n].includes(i) ? 'p' : ''}"></i>`).join(''); el.setAttribute('aria-label', String(n)); }
 function hint(msg) { $('hintText').textContent = msg || ''; }
 function showOverlay(id) { for (const o of document.querySelectorAll('.overlay')) o.classList.toggle('show', o.id === id); }
 function hideOverlays() { for (const o of document.querySelectorAll('.overlay')) o.classList.remove('show'); }
 function showDice(d) {
-  const box = $('dice'); box.classList.add('show');
+  const box = $('dice'); box.classList.remove('land'); box.classList.add('show', 'roll');
   $('d1').classList.remove('seven'); $('d2').classList.remove('seven');
   let ticks = 7;
   const spin = setInterval(() => {
-    if (ticks-- > 0) { $('d1').textContent = 1 + Math.floor(Math.random() * 6); $('d2').textContent = 1 + Math.floor(Math.random() * 6); return; }
+    if (ticks-- > 0) { setDie($('d1'), 1 + Math.floor(Math.random() * 6)); setDie($('d2'), 1 + Math.floor(Math.random() * 6)); return; }
     clearInterval(spin);
-    $('d1').textContent = d[0]; $('d2').textContent = d[1];
+    setDie($('d1'), d[0]); setDie($('d2'), d[1]); box.classList.remove('roll'); box.classList.add('land');
     if (d[0] + d[1] === 7) { $('d1').classList.add('seven'); $('d2').classList.add('seven'); }
     setTimeout(() => box.classList.remove('show'), 1200);
   }, 70);
@@ -63,17 +71,18 @@ function renderHUD(bumped = []) {
   const me = myPid(), mine = me >= 0 ? st.players[me] : null;
   const online = session.mode === 'online';
   $('players').classList.toggle('compact', st.players.length > 4);
+  $('players').classList.toggle('grid2', st.players.length === 3 || st.players.length === 4);
   $('players').innerHTML = st.players.map(q => {
     const away = online && q.clientId && session.peers && !session.peers.has(q.clientId);
     const isMe = online && q.id === me, compact = st.players.length > 4;
-    return `<div class="pchip ${q.id === st.current ? 'active' : ''} ${away ? 'away' : ''} ${isMe ? 'me' : ''}"><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}${isMe && !compact ? ' (vous)' : ''}</b><span>${vp(q)} pts</span><small>${total(q)} 🂠</small></div>`;
-  }).join('') + `<button type="button" class="menuBtn" id="btnMenu" aria-label="Menu de la partie">⋯</button>`;
+    return `<div class="pchip ${q.id === st.current ? 'active' : ''} ${away ? 'away' : ''} ${isMe ? 'me' : ''}"><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}${isMe && !compact ? ' (vous)' : ''}</b><span class="pts" title="Points">${vp(q)}</span><small class="cards" title="Cartes en main">${total(q)}</small></div>`;
+  }).join('') + `<button type="button" class="menuBtn" id="btnMenu" aria-label="Menu de la partie">${icon('menu')}</button>`;
   $('btnMenu').onclick = openMenu;
   $('tideNow').querySelector('strong').textContent = st.phase === 'setup' ? "Après l'installation" : tideTitle(st.tide);
   $('tideNext').querySelector('strong').textContent = st.phase === 'setup' ? '—' : tideTitle(st.nextTide);
   if (mine) {
-    $('hand').innerHTML = RES.map(r => `<div class="card ${bumped.includes(r) ? 'bump' : ''}"><span class="ic">${RES_INFO[r].ic}</span><span class="n">${mine.res[r]}</span><span class="lb">${RES_INFO[r].nom}</span></div>`).join('') +
-      `<div class="card ${bumped.includes('fortune') ? 'bump' : ''}"><span class="ic" style="color:var(--lamp)">✦</span><span class="n">${mine.fortune}</span><span class="lb">Fortune</span></div>`;
+    $('hand').innerHTML = RES.map(r => `<div class="card r-${r} ${bumped.includes(r) ? 'bump' : ''}">${icon(r)}<span class="n">${mine.res[r]}</span><span class="lb">${RES_INFO[r].nom}</span></div>`).join('') +
+      `<div class="card r-fortune ${bumped.includes('fortune') ? 'bump' : ''}">${icon('fortune')}<span class="n">${mine.fortune}</span><span class="lb">Fortune</span></div>`;
   } else $('hand').innerHTML = '<div class="spect">Vous regardez la partie</div>';
   const mt = isMyTurn() && !waiting;
   const mb = (mt || canQuickBuild()) && !waiting;
@@ -83,7 +92,7 @@ function renderHUD(bumped = []) {
   $('btnBastion').disabled = !(mb && canBuild(st, me, 'bastion'));
   $('btnBank').disabled = !(mt && st.phase === 'main');
   $('btnEnd').disabled = !(mt && st.phase === 'main');
-  $('btnSentier').querySelector('.co').textContent = st.tide?.type === 'chantier-sentier' ? '🪵 seulement' : '🪵🪨';
+  $('btnSentier').querySelector('.co').innerHTML = st.tide?.type === 'chantier-sentier' ? icon('bois') : icon('bois') + icon('pierre');
   for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).classList.toggle('on', uiMode === m);
   $('toasts').style.top = `${Math.round($('top').getBoundingClientRect().bottom + 8)}px`;
 }
@@ -183,7 +192,7 @@ function renderTimer() {
   el.classList.toggle('low', left <= 10000);
   el.querySelector('.fill').style.transform = `scaleX(${Math.min(1, frac).toFixed(4)})`;
   const sec = Math.ceil(left / 1000);
-  el.querySelector('span').textContent = `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} · ${isMyTurn() ? 'à vous' : st.players[st.current].nom}`;
+  el.querySelector('span').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} · ${isMyTurn() ? 'à vous' : st.players[st.current].nom}`;
   return left;
 }
 function autoPlay(st) {
@@ -267,11 +276,11 @@ $('tideNext').onclick = () => S()?.nextTide && toast(`Ensuite : ${tideDesc(S().n
 let give_ = null, get_ = null;
 function renderBank() {
   const st = S(), me = myPid(), p = st.players[me];
-  $('giveGrid').innerHTML = RES.map(r => { const rate = rateFor(st, me, r); return `<button type="button" class="resbtn ${give_ === r ? 'sel' : ''}" data-r="${r}" ${p.res[r] < rate ? 'disabled' : ''}><span class="ic">${RES_INFO[r].ic}</span>${RES_INFO[r].nom}<small>${rate}:1 · ${p.res[r]} en main</small></button>`; }).join('') +
-    `<button type="button" class="resbtn ${give_ === 'fortune' ? 'sel' : ''}" data-r="fortune" ${p.fortune < 3 ? 'disabled' : ''}><span class="ic" style="color:var(--lamp)">✦</span>Fortune<small>3 jetons · ${p.fortune} en main</small></button>`;
-  $('getGrid').innerHTML = RES.map(r => `<button type="button" class="resbtn ${get_ === r ? 'sel' : ''}" data-r="${r}" ${st.bank[r] < 1 || r === give_ ? 'disabled' : ''}><span class="ic">${RES_INFO[r].ic}</span>${RES_INFO[r].nom}<small>banque : ${st.bank[r]}</small></button>`).join('');
+  $('giveGrid').innerHTML = RES.map(r => { const rate = rateFor(st, me, r); return `<button type="button" class="resbtn ${give_ === r ? 'sel' : ''}" data-r="${r}" ${p.res[r] < rate ? 'disabled' : ''}>${icon(r)}${RES_INFO[r].nom}<small>${rate}:1 · ${p.res[r]} en main</small></button>`; }).join('') +
+    `<button type="button" class="resbtn ${give_ === 'fortune' ? 'sel' : ''}" data-r="fortune" ${p.fortune < 3 ? 'disabled' : ''}>${icon('fortune')}Fortune<small>3 jetons · ${p.fortune} en main</small></button>`;
+  $('getGrid').innerHTML = RES.map(r => `<button type="button" class="resbtn ${get_ === r ? 'sel' : ''}" data-r="${r}" ${st.bank[r] < 1 || r === give_ ? 'disabled' : ''}>${icon(r)}${RES_INFO[r].nom}<small>banque : ${st.bank[r]}</small></button>`).join('');
   const rate = give_ === 'fortune' ? 3 : give_ ? rateFor(st, me, give_) : 0;
-  $('tradeSummary').textContent = give_ && get_ ? `${rate} ${give_ === 'fortune' ? '✦' : RES_INFO[give_].ic}  →  1 ${RES_INFO[get_].ic}` : 'Choisissez quoi donner et quoi recevoir';
+  $('tradeSummary').innerHTML = give_ && get_ ? `<b>${rate}</b>${icon(give_)}<span class="arrow">➜</span><b>1</b>${icon(get_)}` : 'Choisissez quoi donner et quoi recevoir';
   $('btnTrade').disabled = !(give_ && get_);
   $('giveGrid').querySelectorAll('button').forEach(b => b.onclick = () => { give_ = b.dataset.r; if (get_ === give_) get_ = null; renderBank(); });
   $('getGrid').querySelectorAll('button').forEach(b => b.onclick = () => { get_ = b.dataset.r; renderBank(); });
@@ -503,9 +512,12 @@ if (PREVIEW) {
 
 /* ---------- Démarrage ---------- */
 initView($('scene'));
-buildView(createGame({ seats: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], seed: 20261107 }));
+const homeIsland = createGame({ seats: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], seed: 20261107 });
+buildView(homeIsland);
+// Les numéros du plateau sont dessinés avec la police du jeu : on redessine l'île d'accueil quand elle est chargée
+document.fonts?.load('700 40px Fredoka').then(() => { if (!session) buildView(homeIsland); }).catch(() => null);
 goHome();
 if (params.get('partie')) $('codeInput').focus();
 
 /* Accès pour les tests automatiques */
-window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads, setTurnTime };
+window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads, setTurnTime, debugScene };
