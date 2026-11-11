@@ -16,8 +16,8 @@ let extent = 4.33, extentZ = 4; // demi-largeur et demi-hauteur de l'île, recal
 let tapHandler = () => {};
 
 export function initView(canvas) {
-  // Sur les écrans très fins (2x et plus), l'anticrénelage coûte cher et ne se voit presque pas
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: window.devicePixelRatio < 2, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12; // couleurs plus riches, lumières plus douces
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -32,10 +32,10 @@ export function initView(canvas) {
   sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 30 });
   scene.add(sun);
-  sea = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.MeshStandardMaterial({ color: SEA_BASE.clone(), roughness: 0.55, metalness: 0.1 }));
-  sea.rotation.x = -Math.PI / 2; sea.position.y = -0.22; sea.receiveShadow = true; scene.add(sea);
+  sea = new THREE.Mesh(new THREE.CircleGeometry(40, 64), makeSeaMaterial());
+  sea.rotation.x = -Math.PI / 2; sea.position.y = -0.22; scene.add(sea);
   shallows = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshStandardMaterial({ color: '#2a7186', roughness: 0.7, transparent: true, opacity: 0.75 }));
-  shallows.rotation.x = -Math.PI / 2; shallows.position.y = -0.2; shallows.scale.setScalar(5.3); scene.add(shallows);
+  shallows.rotation.x = -Math.PI / 2; shallows.position.y = -0.2; shallows.scale.setScalar(5.3); shallows.visible = false; // remplacé par la mer animée
   world = new THREE.Group(); scene.add(world);
   markers = new THREE.Group(); scene.add(markers);
   setupInput(canvas);
@@ -127,7 +127,7 @@ function textTexture(draw, w = 128, h = 128) {
 }
 const numberMats = new Map();
 function numberMat(n) {
-  if (!numberMats.has(n)) { const m = new THREE.MeshBasicMaterial({ map: numberTexture(n), transparent: true }); m.userData.shared = true; numberMats.set(n, m); }
+  if (!numberMats.has(n)) { const m = new THREE.MeshBasicMaterial({ map: numberTexture(n), transparent: true, toneMapped: false }); m.userData.shared = true; numberMats.set(n, m); }
   return numberMats.get(n);
 }
 export function refreshNumbers() { for (const [n, m] of numberMats) { m.map.dispose(); m.map = numberTexture(n); m.needsUpdate = true; } }
@@ -157,13 +157,13 @@ function portSprite(type) {
     if (img) { if (img.complete) g.drawImage(img, 18, 18, 60, 60); g.fillStyle = '#ffcf6b'; g.textAlign = 'left'; g.fillText('2:1', 86, h / 2 + 1); }
     else { g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.fillText('3:1', w / 2, h / 2 + 1); }
   });
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t.tex, depthWrite: false, fog: false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: t.tex, depthWrite: false, fog: false }));
   s.scale.set(0.82, 0.45, 1); return s;
 }
 function iconSprite(name, size = 0.42) {
   const img = whenIcon(name, () => t.redraw());
   const t = canvasTex(128, 128, (g, w, h) => { if (img.complete) g.drawImage(img, 4, 4, w - 8, h - 8); });
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t.tex, transparent: true, depthWrite: false, depthTest: false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: t.tex, transparent: true, depthWrite: false, depthTest: false }));
   s.scale.set(size, size, 1); s.renderOrder = 5; return s;
 }
 function ringPos(i, n, rad, rot = 0) { const a = rot + i / n * Math.PI * 2; return [Math.cos(a) * rad, Math.sin(a) * rad]; }
@@ -214,7 +214,7 @@ function resBadge(res) {
   g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.045, 24), mat('#f6eedc', { flatShading: false })), 0, 0.064, 0));
   const img = whenIcon(res, () => t.redraw());
   const t = canvasTex(128, 128, (c, w, h) => { if (img.complete) c.drawImage(img, 8, 8, w - 16, h - 16); });
-  const ic = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.25), new THREE.MeshBasicMaterial({ map: t.tex, transparent: true }));
+  const ic = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.25), new THREE.MeshBasicMaterial({ map: t.tex, transparent: true, toneMapped: false }));
   ic.rotation.x = -Math.PI / 2; ic.position.y = 0.088; g.add(ic);
   // Toujours visible : la pastille se dessine par-dessus le décor de sa tuile (matériaux partagés par ressource)
   g.children.forEach((m, i) => {
@@ -333,7 +333,9 @@ function makePhare() {
   const light = new THREE.PointLight('#ffcf6b', 6, 5, 1.6); light.position.y = 1.1; g.add(light);
   const beamGeo = new THREE.ConeGeometry(0.5, 3.4, 16, 1, true); beamGeo.translate(0, -1.7, 0); beamGeo.rotateZ(Math.PI / 2);
   const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: '#ffe0a0', transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
-  beam.position.y = 1.08; g.add(beam); g.userData.beam = beam;
+  beam.position.y = 1.08; beam.userData.keep = true; g.add(beam); g.userData.beam = beam;
+  const halo = glowSprite('rgba(255,214,140,0.9)', 1.6); halo.position.y = 1.1; g.add(halo); g.userData.halo = halo;
+  mergeStatic(g);
   return g;
 }
 function makeScout(color) {
@@ -435,6 +437,7 @@ export function buildView(state) {
   shadowsDirty = 3;
   view = { portSpots: [], tiles: [], vertexObjs: new Map(), roadObjs: new Map(), robber: null, phare: null, gameId: S.gameId };
   const statics = []; // tout ce qui ne bouge plus : fusionné en quelques dessins à la fin
+  const sandGeo = new THREE.CylinderGeometry(1.1, 1.16, 0.12, 6);
   for (const t of S.tiles) {
     const g = new THREE.Group(); g.position.set(t.x, 0, t.z);
     // Tuile visible : matériau partagé (fusionnable) ; tuile dans la brume : matériau propre, animé à la révélation
@@ -455,6 +458,8 @@ export function buildView(state) {
       label.rotation.x = -Math.PI / 2; label.position.y = 0.058; top.add(label);
       statics.push(token, label);
     }
+    // Plage de sable sous chaque tuile : elle dessine le rivage et les joints entre les tuiles
+    const sand = new THREE.Mesh(sandGeo, mat('#d9c18c')); sand.position.set(t.x, -0.14, t.z); sand.receiveShadow = true; world.add(sand); statics.push(sand);
     world.add(g);
     if (t.revealed || t.terrain === 'phare') statics.push(base);
     if (t.revealed && decor) statics.push(decor);
@@ -484,6 +489,10 @@ export function buildView(state) {
     o.position.copy(vpos(v.id, TOP)); world.add(o); view.vertexObjs.set(v.id, o);
   }
   view.robber = makeRobber(); world.add(view.robber); placeRobberAt(S.robber, false);
+  buildSdf();
+  view.motes = makeMotes(); world.add(view.motes);
+  gulls.length = 0;
+  for (let i = 0; i < 3; i++) { const gl = makeGull(); gl.userData = { a: i * 2.1, r: 1.6 + i * 0.9, h: 2.1 + i * 0.35, sp: 0.25 + i * 0.06 }; world.add(gl); gulls.push(gl); }
   placeBoats();
   setTide(S.tide?.type); renderSnow();
 }
@@ -635,7 +644,7 @@ export function playEvents(state, events) {
 
 /* ---------- Repères d'interaction ---------- */
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
-const glow = new THREE.MeshBasicMaterial({ color: '#ffcf6b', transparent: true, opacity: 0.9 });
+const glow = new THREE.MeshBasicMaterial({ color: '#ffd36e', transparent: true, opacity: 0.9, toneMapped: false }); // les emplacements restent bien vifs
 /* Emplacements lumineux : une zone de toucher invisible par emplacement, et un seul dessin
    (maillage instancié) par forme, quel que soit leur nombre. */
 const markerGeo = {
@@ -820,6 +829,98 @@ function setupInput(canvas) {
 }
 
 
+/* ---------- Mer ----------
+   Un seul dessin pour toute la mer : couleur des fonds selon la distance à la côte (carte des distances
+   calculée une fois par île), vaguelettes animées, reflets du soleil, écume qui ourle la côte. */
+const seaUniforms = {
+  uTime: { value: 0 }, uDeep: { value: SEA_BASE.clone() }, uShallow: { value: new THREE.Color('#237891') },
+  uSdf: { value: null }, uHalf: { value: 12 }, uSun: { value: new THREE.Vector3(4, 10, 5).normalize() },
+};
+function makeSeaMaterial() {
+  const m = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {}]), fog: true,
+    vertexShader: `
+      varying vec3 vWorld;
+      #include <fog_pars_vertex>
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz;
+        vec4 mvPosition = viewMatrix * wp; gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: `
+      uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform sampler2D uSdf; uniform float uHalf; uniform vec3 uSun;
+      varying vec3 vWorld;
+      #include <fog_pars_fragment>
+      float waves(vec2 p, float t) {
+        return sin(p.x * 1.9 + t * 0.9 + sin(p.y * 1.2 + t * 0.35) * 1.4) * sin(p.y * 1.6 - t * 0.7)
+             + 0.45 * sin((p.x + p.y) * 3.3 + t * 1.5) + 0.25 * sin((p.x - p.y * 0.6) * 6.1 - t * 2.1);
+      }
+      void main() {
+        vec2 p = vWorld.xz; float t = uTime;
+        vec2 uv = p / (2.0 * uHalf) + 0.5;
+        float dl = texture2D(uSdf, uv).r * 4.0; // distance à la côte, en unités du plateau
+        float shallow = 1.0 - smoothstep(0.05, 1.9, dl);
+        vec3 col = mix(uDeep, uShallow, shallow * 0.9);
+        // relief des vagues : normale approchée pour la lumière et les reflets
+        float e = 0.08, w = waves(p, t);
+        vec3 n = normalize(vec3(waves(p - vec2(e, 0.0), t) - waves(p + vec2(e, 0.0), t), 9.0, waves(p - vec2(0.0, e), t) - waves(p + vec2(0.0, e), t)));
+        vec3 v = normalize(cameraPosition - vWorld);
+        float spec = pow(max(dot(reflect(-uSun, n), v), 0.0), 160.0);
+        float fres = pow(1.0 - max(v.y, 0.0), 3.0);
+        col += vec3(0.75, 0.9, 1.0) * smoothstep(1.0, 1.6, w) * 0.05 * (0.4 + shallow);
+        col += vec3(1.0, 0.92, 0.75) * spec * 0.35;
+        col = mix(col, col * 1.15 + 0.02, fres * 0.15);
+        // écume : un liseré contre la côte et des vagues qui s'éloignent
+        float foamEdge = smoothstep(0.2, 0.03, dl) * (0.55 + 0.45 * sin(dl * 34.0 - t * 2.6 + w * 1.5));
+        float ring = smoothstep(0.04, 0.0, abs(fract(dl * 1.6 - t * 0.22) - 0.5) - 0.46) * smoothstep(0.9, 0.15, dl) * 0.3;
+        col = mix(col, vec3(0.9, 0.96, 1.0), clamp(foamEdge * 0.55 + ring * 0.7 * (0.5 + 0.5 * sin(p.x * 3.0 + p.y * 2.0)), 0.0, 1.0));
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        #include <fog_fragment>
+      }`,
+  });
+  Object.assign(m.uniforms, seaUniforms);
+  return m;
+}
+/* Carte des distances à la côte (une texture 128 x 128 calculée à la construction de l'île) */
+function buildSdf() {
+  const N = 128, half = Math.max(extent, extentZ) + 5, data = new Uint8Array(N * N * 4);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i + 0.5) / N * 2 * half - half, z = (j + 0.5) / N * 2 * half - half;
+    let d = 99;
+    for (const t of S.tiles) { const dd = Math.hypot(x - t.x, z - t.z) - 0.93; if (dd < d) d = dd; }
+    const v = Math.round(Math.min(1, Math.max(0, d) / 4) * 255), k = (j * N + i) * 4;
+    data[k] = data[k + 1] = data[k + 2] = v; data[k + 3] = 255;
+  }
+  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat); tex.magFilter = tex.minFilter = THREE.LinearFilter; tex.needsUpdate = true;
+  seaUniforms.uSdf.value?.dispose(); seaUniforms.uSdf.value = tex; seaUniforms.uHalf.value = half;
+}
+/* Lueur du phare, poussière lumineuse et mouettes */
+function glowSprite(color, size) {
+  const t = canvasTex(64, 64, (g, w, h) => { const r = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); r.addColorStop(0, color); r.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: t.tex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  s.scale.set(size, size, 1); return s;
+}
+function makeMotes() {
+  const n = 46, pos = new Float32Array(n * 3), R = Math.max(extent, extentZ);
+  for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R; pos.set([Math.cos(a) * r * (extent / R), 0.4 + Math.random() * 1.4, Math.sin(a) * r * (extentZ / R)], i * 3); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const t = canvasTex(32, 32, (g, w, h) => { const r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, 'rgba(255,230,170,1)'); r.addColorStop(1, 'rgba(255,230,170,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.09, map: t.tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 }));
+  pts.userData.base = pos.slice(); return pts;
+}
+function makeGull() {
+  const g = new THREE.Group(), m = mat('#f4f6f8', { side: THREE.DoubleSide });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.07, 2, 6), m); body.rotation.z = Math.PI / 2; g.add(body);
+  for (const sgn of [-1, 1]) {
+    const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(-0.03, 0.15 * sgn); shape.lineTo(0.035, 0.02 * sgn);
+    const wing = new THREE.Mesh(new THREE.ShapeGeometry(shape), m); wing.rotation.x = -Math.PI / 2; const pivot = new THREE.Group(); pivot.add(wing); pivot.userData.sgn = sgn; g.add(pivot);
+  }
+  g.scale.setScalar(1.6); return g;
+}
+const gulls = [];
+
 /* ---------- Vie marine : bateaux de pêche, dauphins, poissons ----------
    Deux bateaux font le tour de l'île, des dauphins sautent de temps en temps.
    Toucher la mer fait sauter un dauphin ; toucher un bateau, il tangue et un poisson s'échappe. */
@@ -965,11 +1066,15 @@ function loop() {
     for (const o of view.vertexObjs.values()) if (o.userData.flag) o.userData.flag.rotation.y = Math.sin(time * 3 + o.position.x) * 0.35;
     view.robber.rotation.y = Math.sin(time * 0.6) * 0.4;
     updateSeaLife(dt, time);
+    // Poussière lumineuse qui flotte, mouettes qui tournent, halo du phare qui respire
+    if (view.motes) { const a = view.motes.geometry.attributes.position, b = view.motes.userData.base; for (let i = 0; i < a.count; i++) a.array[i * 3 + 1] = b[i * 3 + 1] + Math.sin(time * 0.6 + i * 1.7) * 0.12; a.needsUpdate = true; view.motes.material.opacity = 0.55 + Math.sin(time * 0.8) * 0.25; }
+    for (const gl of gulls) { const u = gl.userData; u.a += u.sp * dt; gl.position.set(Math.cos(u.a) * u.r * 1.6, u.h + Math.sin(time * 0.7 + u.r) * 0.1, Math.sin(u.a) * u.r); gl.rotation.y = -u.a - Math.PI; gl.children.forEach(c => { if (c.userData.sgn) c.rotation.x = Math.sin(time * 7 + u.r) * 0.5 * c.userData.sgn; }); }
+    if (view.phare?.userData.halo) view.phare.userData.halo.material.opacity = 0.75 + Math.sin(time * 2.2) * 0.2;
   }
-  glow.opacity = 0.55 + Math.sin(time * 5) * 0.3;
+  glow.opacity = 0.72 + Math.sin(time * 5) * 0.25;
   if (tweens.length) shadowsDirty = 2;
   if (shadowsDirty > 0) { renderer.shadowMap.needsUpdate = true; shadowsDirty--; }
-  sea.material.color.lerp(seaTarget, 0.04);
+  seaUniforms.uDeep.value.lerp(seaTarget, 0.04); seaUniforms.uTime.value = time;
   // Au repos (rien ne bouge sous le doigt, pas d'animation de jeu), une image sur deux suffit :
   // le téléphone chauffe moins et garde toute sa puissance pour les moments où l'on joue.
   const busy = moving || dragging || tweens.length > 0 || shadowsDirty > 0 || performance.now() - lastInput < 1500;
