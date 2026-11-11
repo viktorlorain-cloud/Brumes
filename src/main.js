@@ -76,6 +76,7 @@ function plateHTML(st, q, me, online) {
   return `<div class="pc ${active ? 'active' : ''} ${away ? 'away' : ''} ${mine ? 'me' : ''}" data-pid="${q.id}" style="--c:${q.col}">
     <div class="pc-head"><span class="vp" title="Points de victoire">${vp(q)}</span><b>${esc(q.nom)}</b></div>
     <div class="pc-row"><span title="Cartes en main">${icon('carte')}${total(q)}</span><span title="Jetons de Fortune">${icon('fortune')}${q.fortune}</span></div>
+    <div class="pc-row bonus"><span class="${q.chemin ? 'held' : ''}" title="Plus long sentier${q.chemin ? ' · Grand Chemin (+2)' : ''}">${icon('sentier')}${q.roadLen || 0}</span><span class="${q.rodeur ? 'held' : ''}" title="Rôdeur déplacé${q.rodeur ? ' · Maître du Rôdeur (+2)' : ''}">${icon('voleur')}${q.robberMoves || 0}</span></div>
     <div class="pc-row pieces"><span title="Sentiers restants">${icon('sentier')}${pieces('sentier')}</span><span title="Camps restants">${icon('camp')}${pieces('camp')}</span><span title="Bastions restants">${icon('bastion')}${pieces('bastion')}</span></div>
     ${active ? '<div class="call"><span class="step"></span><b class="clock" hidden></b></div>' : ''}</div>`;
 }
@@ -94,6 +95,7 @@ function renderHUD() {
   const online = session.mode === 'online';
   $('players').classList.toggle('six', st.players.length > 4);
   $('players').style.setProperty('--n', st.players.length);
+  renderBankBar(st);
   $('players').innerHTML = st.players.map(q => plateHTML(st, q, me, online)).join('');
   // Marée : visible seulement quand elle agit ou qu'elle est annoncée
   const chip = $('tideChip');
@@ -108,10 +110,12 @@ function renderHUD() {
   clampPick(mine);
   if (mine) {
     const card = (r, cls, n) => { const k = give[r] || 0;
-      return `<button type="button" class="rcard ${cls} ${k ? 'picked' : ''} ${canTrade ? 'pickable' : ''}" data-r="${r}" title="${r === 'fortune' ? 'Jetons de Fortune' : RES_INFO[r].nom}" ${canTrade ? '' : 'tabindex="-1"'}>${icon(r)}<span class="n">${n}</span>${k ? `<span class="sel">${k}</span>` : ''}</button>`; };
+      const layers = Array.from({ length: Math.min(n - 1, 4) }, (_, i) => `${2 * i + 2}px ${-2 * i - 2}px 0 -1px var(--rc), ${2 * i + 2}px ${-2 * i - 2}px 0 0 rgba(8,18,26,.6)`).join(', ');
+      return `<button type="button" class="rcard ${cls} ${k ? 'picked' : ''} ${canTrade ? 'pickable' : ''}" style="--k:${Math.min(n, 8)};${layers && r !== 'fortune' ? `--stack:${layers}` : ''}" data-r="${r}" title="${r === 'fortune' ? 'Jetons de Fortune' : RES_INFO[r].nom}" ${canTrade ? '' : 'tabindex="-1"'}>${icon(r)}<span class="n">${n}</span>${k ? `<span class="sel">${k}</span>` : ''}</button>`; };
     const cards = RES.filter(r => mine.res[r] > 0).map(r => card(r, `r-${r}`, mine.res[r])).join('');
     $('hand').innerHTML = (cards || '<div class="empty">Aucune ressource</div>') + (mine.fortune ? card('fortune', 'coin', mine.fortune) : '');
     $('hand').querySelectorAll('.rcard').forEach(b => b.onclick = () => pickCard(b.dataset.r));
+    fitHand();
   } else $('hand').innerHTML = '<div class="empty">Vous regardez la partie</div>';
   const mt = isMyTurn() && !waiting;
   const rolling = st.phase === 'roll' || st.phase === 'setup';
@@ -140,6 +144,20 @@ function renderHUD() {
   renderOffer(); renderTimer(); renderCosts();
   const call = document.querySelector('.pc.active .call');
   $('toasts').style.top = `${Math.round(Math.max($('top').getBoundingClientRect().bottom, call ? call.getBoundingClientRect().bottom : 0) + 8)}px`;
+}
+/* La main tient toujours à côté des trois boutons : si la place manque, les piles se chevauchent */
+function fitHand() {
+  const hand = $('hand'), cards = [...hand.querySelectorAll('.rcard')];
+  hand.style.setProperty('--gap', '8px');
+  if (cards.length < 2) return;
+  const avail = hand.clientWidth - 8 - 2 - 10, used = cards.reduce((w, c) => w + c.offsetWidth, 0);
+  const gap = Math.min(8, Math.floor((avail - used) / (cards.length - 1)));
+  hand.style.setProperty('--gap', `${gap}px`);
+}
+window.addEventListener('resize', () => { if (S()) fitHand(); });
+/* Banque : cartes restantes de chaque ressource */
+function renderBankBar(st) {
+  $('bankBar').innerHTML = `${icon('banque')}` + RES.map(r => `<span class="${st.bank[r] <= 3 ? 'low' : ''}" title="${RES_INFO[r].nom} en banque">${icon(r)}${st.bank[r]}</span>`).join('');
 }
 /* Les cartes gagnées tombent dans la main, avec leur « +N » */
 function dropGains() {
@@ -196,9 +214,29 @@ function refreshInteraction() {
   if (uiMode === 'sentier') { showMarkers('edge', legalRoads(st, me)); hint('Touchez un emplacement lumineux pour tracer le sentier'); return; }
   if (uiMode === 'camp') { showMarkers('vertex', legalCamps(st, me)); hint('Touchez une intersection lumineuse pour installer le camp'); return; }
   if (uiMode === 'bastion') { showMarkers('vertex', legalBastions(st, me)); hint('Touchez un de vos camps pour en faire un bastion'); return; }
+  // Si on a de quoi construire, les emplacements possibles s'allument d'eux-mêmes
+  if (st.phase === 'main' && !st.offer) {
+    const sug = suggestions(st, me);
+    if (sug.length) {
+      clearMarkers();
+      for (const [kind, ids] of sug) showMarkers(kind, ids, true);
+      const what = sug.map(x => ({ sentier: 'sentier', camp: 'camp', bastion: 'bastion' })[x[2]]).join(', ');
+      hint(`Vous pouvez construire (${what}) : touchez un emplacement lumineux`);
+      return;
+    }
+  }
   clearMarkers();
   hint(st.phase === 'roll' ? `${cur.nom} : lancez les dés` : `${cur.nom} : construisez ou échangez`);
 }
+/* Constructions possibles tout de suite : [type de repère, emplacements, nom] */
+function suggestions(st, me) {
+  const out = [];
+  if (canBuild(st, me, 'bastion')) { const v = legalBastions(st, me); if (v.length) out.push(['vertex', v, 'bastion']); }
+  if (canBuild(st, me, 'camp')) { const v = legalCamps(st, me); if (v.length) out.push(['vertex', v, 'camp']); }
+  if (canBuild(st, me, 'sentier')) { const e = legalRoads(st, me); if (e.length) out.push(['edge', e, 'sentier']); }
+  return out;
+}
+let closedAt = 0; // un toucher qui ferme un panneau ne construit rien
 function refreshAll() { renderHUD(); refreshInteraction(); renderDiscard(); }
 
 /* ---------- Défausse sur un 7 : chaque joueur concerné choisit ses cartes ---------- */
@@ -321,8 +359,38 @@ function autoPlay(st) {
   } else if (st.phase === 'main') a = { t: 'end' };
   if (a) { if (uiMode && pid === myPid()) uiMode = null; hostApply(pid, a); }
 }
+/* Le Rôdeur surgit à l'écran de celui qui tarde à le placer (une fois par 7) */
+const SCARE_AFTER = 12000;
+let robberKey = null, robberSince = 0, scared = null;
+function growl() {
+  try {
+    const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
+    const ac = growl.ac || (growl.ac = new A()), t = ac.currentTime;
+    const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(70, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.9);
+    f.type = 'lowpass'; f.frequency.value = 600;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+    o.connect(f).connect(g).connect(ac.destination); o.start(t); o.stop(t + 1.2);
+  } catch { /* son indisponible */ }
+}
+function jumpScare() {
+  const el = $('scare'); el.hidden = false;
+  el.querySelectorAll('*').forEach(n => { n.style.animation = 'none'; void n.offsetWidth; n.style.animation = ''; });
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+  document.body.classList.remove('shake'); void document.body.offsetWidth; document.body.classList.add('shake');
+  growl();
+  try { navigator.vibrate?.([120, 60, 200]); } catch { /* indisponible */ }
+  setTimeout(() => { el.hidden = true; document.body.classList.remove('shake'); }, 1650);
+}
+function watchRobber(st) {
+  if (st.phase !== 'robber') { robberKey = null; return; }
+  const k = `${st.gameId}:${st.round}:${st.current}`;
+  if (k !== robberKey) { robberKey = k; robberSince = Date.now(); }
+  if (scared !== k && isMyTurn() && Date.now() - robberSince > SCARE_AFTER) { scared = k; jumpScare(); }
+}
 function tickTimer() {
   const st = S(); if (!st) return;
+  watchRobber(st);
   const left = renderTimer();
   if (left == null) return;
   if (left <= 10000 && left > 0 && !warned && isMyTurn()) { warned = true; toast('Plus que 10 secondes'); try { navigator.vibrate?.([60, 80, 60]); } catch { /* indisponible */ } }
@@ -375,6 +443,11 @@ onTap((kind, id) => {
   if (uiMode === 'sentier' && kind === 'edge') return act({ t: 'road', e: id });
   if (uiMode === 'camp' && kind === 'vertex') return act({ t: 'camp', v: id });
   if (uiMode === 'bastion' && kind === 'vertex') return act({ t: 'bastion', v: id });
+  // Emplacement proposé automatiquement
+  if (!uiMode && st.phase === 'main' && performance.now() - closedAt > 500) {
+    if (kind === 'edge') return act({ t: 'road', e: id });
+    if (kind === 'vertex') return act(st.vertices[id].building?.owner === myPid() ? { t: 'bastion', v: id } : { t: 'camp', v: id });
+  }
 });
 $('btnRoll').onclick = () => act({ t: 'roll' });
 $('btnEnd').onclick = () => act({ t: 'end' });
@@ -398,7 +471,9 @@ function renderCosts() {
   panel.hidden = false;
   panel.innerHTML = '<h3>Coûts de construction</h3>' + Object.entries(PIECES).map(([k, p]) =>
     `<div class="costRow">${icon(p.ico)}<span><b>${p.nom}</b><small>${p.pts}</small></span><span class="costs">${costIcons(st, k)}</span></div>`).join('') +
-    (st.tide?.type === 'chantier-sentier' ? '<div class="note">Marée en cours : le sentier coûte moins cher.</div>' : '');
+    (st.tide?.type === 'chantier-sentier' ? '<div class="note">Marée en cours : le sentier coûte moins cher.</div>' : '') +
+    `<div class="costRow">${icon('sentier')}<span><b>Grand Chemin</b><small>plus long sentier, 5 min.</small></span><span class="costs"><b>+2</b></span></div>` +
+    `<div class="costRow">${icon('voleur')}<span><b>Maître du Rôdeur</b><small>Rôdeur déplacé 3 fois min.</small></span><span class="costs"><b>+2</b></span></div>`;
 }
 $('btnCosts').onclick = () => { costOpen = !costOpen; renderCosts(); };
 /* Toucher ailleurs sur l'écran ferme ce qui est ouvert (échange, construction, coûts, bulle, menu, règles) */
@@ -409,6 +484,7 @@ document.addEventListener('pointerdown', e => {
   if (buildOpen && !inside('#buildPanel, #btnBuild')) { buildOpen = false; hud = true; }
   if (costOpen && !inside('#costPanel, #btnCosts')) { costOpen = false; renderCosts(); }
   if (!$('pieceTip').hidden && !inside('#pieceTip')) $('pieceTip').hidden = true;
+  if (hud) closedAt = performance.now();
   if (hud && S()) refreshAll();
 }, true);
 for (const id of ['menuOverlay', 'rulesOverlay']) $(id).addEventListener('click', e => {

@@ -255,7 +255,45 @@ export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 
 
 /* ---------- Lectures ---------- */
 export const total = p => RES.reduce((s, r) => s + p.res[r], 0);
-export const vp = p => p.built.camp + 2 * p.built.bastion;
+export const vp = p => p.built.camp + 2 * p.built.bastion + (p.chemin ? 2 : 0) + (p.rodeur ? 2 : 0);
+/* Bonus comme dans le jeu de base : « Grand Chemin » (le plus long sentier continu, 5 au moins)
+   et « Maître du Rôdeur » (le Rôdeur déplacé le plus souvent, 3 fois au moins). 2 points chacun. */
+export const BONUS_MIN = { chemin: 5, rodeur: 3 };
+/* Plus long sentier d'un joueur : on suit ses sentiers sans repasser deux fois par le même,
+   et un camp adverse coupe le chemin à son intersection. */
+export function longestRoad(S, pid) {
+  const mine = S.edges.filter(e => e.road === pid);
+  if (!mine.length) return 0;
+  const blocked = v => { const b = S.vertices[v].building; return b && b.owner !== pid; };
+  let best = 0;
+  const walk = (v, used, len) => {
+    if (len > best) best = len;
+    if (len > 0 && blocked(v)) return;
+    for (const eid of S.vertices[v].edges) {
+      if (used.has(eid) || S.edges[eid].road !== pid) continue;
+      const e = S.edges[eid], next = e.v[0] === v ? e.v[1] : e.v[0];
+      used.add(eid); walk(next, used, len + 1); used.delete(eid);
+    }
+  };
+  const starts = new Set(mine.flatMap(e => e.v));
+  for (const v of starts) walk(v, new Set(), 0);
+  return best;
+}
+/* Recalcule le Grand Chemin ; le détenteur le garde en cas d'égalité, sinon il passe au seul plus long */
+function updateLongest(S, ev) {
+  const lens = S.players.map(q => longestRoad(S, q.id));
+  S.players.forEach((q, i) => { q.roadLen = lens[i]; });
+  const holder = S.players.find(q => q.chemin), max = Math.max(...lens);
+  let next = null;
+  if (max >= BONUS_MIN.chemin) {
+    if (holder && lens[holder.id] === max) next = holder;
+    else { const top = S.players.filter(q => lens[q.id] === max); if (top.length === 1) next = top[0]; }
+  }
+  if (next === holder) return;
+  if (holder) holder.chemin = false;
+  if (next) { next.chemin = true; ev.push({ k: 'toast', msg: `${next.nom} prend le Grand Chemin (${max} sentiers, +2 points)${holder ? ` à ${holder.nom}` : ''}`, ms: 3800 }); }
+  else if (holder) ev.push({ k: 'toast', msg: `${holder.nom} perd le Grand Chemin (sentier coupé)`, ms: 3800 });
+}
 export function costOf(S, kind) {
   if (kind === 'sentier' && S.tide?.type === 'chantier-sentier') return { bois: 1 };
   return BASE_COSTS[kind];
@@ -420,6 +458,7 @@ export function applyAction(S, pid, a) {
       if (!legalRoads(S, pid, true).includes(a.e)) return fail('Le sentier doit partir de votre nouveau camp.');
       S.edges[a.e].road = pid; p.built.sentier++;
       ev.push({ k: 'road', e: a.e, pid, setup: true, from: S.lastCamp });
+      p.roadLen = longestRoad(S, pid);
       const nw = reveal(S, S.edges[a.e].tiles); if (nw.length) ev.push({ k: 'reveal', tiles: nw });
       S.setupStep++; S.setupSub = 'camp'; S.lastCamp = S.setupStep >= S.setupOrder.length ? null : S.lastCamp;
       if (S.setupStep >= S.setupOrder.length) {
@@ -458,12 +497,20 @@ export function applyAction(S, pid, a) {
     if (S.phase !== 'robber') return fail('Le Rôdeur ne peut pas bouger maintenant.');
     if (!legalRobber(S).includes(a.tile)) return fail('Tuile impossible.');
     S.robber = a.tile; ev.push({ k: 'robber', tile: a.tile });
+    p.robberMoves = (p.robberMoves || 0) + 1;
+    const holder = S.players.find(q => q.rodeur);
+    if (p.robberMoves >= BONUS_MIN.rodeur && !p.rodeur && (!holder || p.robberMoves > (holder.robberMoves || 0))) {
+      if (holder) holder.rodeur = false;
+      p.rodeur = true;
+      ev.push({ k: 'toast', msg: `${p.nom} devient Maître du Rôdeur (${p.robberMoves} fois, +2 points)${holder ? ` à la place de ${holder.nom}` : ''}`, ms: 3800, delay: 1200 });
+    }
     const victims = S.players.filter(q => q.id !== pid && total(q) > 0 && S.tiles[a.tile].vertices.some(v => S.vertices[v].building?.owner === q.id));
     if (victims.length) {
       const v = pick(victims); const r = pick(RES.filter(x => v.res[x] > 0)); v.res[r]--; p.res[r]++;
       ev.push({ k: 'toast', msg: `Le Rôdeur vole ${RES_INFO[r].ic} à ${v.nom} pour ${p.nom}`, delay: 800 });
     } else ev.push({ k: 'toast', msg: 'Le Rôdeur ne trouve rien à voler', delay: 800 });
     S.phase = 'main';
+    checkWin(S, p, ev);
     return { ok: true, events: ev };
   }
 
@@ -475,6 +522,8 @@ export function applyAction(S, pid, a) {
     ev.push({ k: 'road', e: a.e, pid });
     const nw = reveal(S, S.edges[a.e].tiles); if (nw.length) ev.push({ k: 'reveal', tiles: nw });
     if (outOfTurn) ev.push({ k: 'toast', msg: `${p.nom} trace un sentier pendant le tour de ${S.players[S.current].nom}` });
+    updateLongest(S, ev);
+    checkWin(S, p, ev);
     return { ok: true, events: ev };
   }
   if (a.t === 'camp') {
@@ -483,6 +532,7 @@ export function applyAction(S, pid, a) {
     ev.push({ k: 'camp', v: a.v, pid });
     const nw = reveal(S, S.vertices[a.v].tiles); if (nw.length) ev.push({ k: 'reveal', tiles: nw });
     if (outOfTurn) ev.push({ k: 'toast', msg: `${p.nom} installe un camp pendant le tour de ${S.players[S.current].nom}` });
+    updateLongest(S, ev); // un camp peut couper le sentier d'un adversaire
     checkWin(S, p, ev);
     return { ok: true, events: ev };
   }

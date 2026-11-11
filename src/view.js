@@ -392,6 +392,7 @@ export function buildView(state) {
     o.position.copy(vpos(v.id, TOP)); world.add(o); view.vertexObjs.set(v.id, o);
   }
   view.robber = makeRobber(); world.add(view.robber); placeRobberAt(S.robber, false);
+  placeBoats();
   setTide(S.tide?.type); renderSnow();
 }
 /* Tempête de neige : voile blanc sur les tuiles touchées et congères sur les chemins bloqués */
@@ -543,8 +544,8 @@ export function playEvents(state, events) {
 /* ---------- Repères d'interaction ---------- */
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 const glow = new THREE.MeshBasicMaterial({ color: '#ffcf6b', transparent: true, opacity: 0.9 });
-export function showMarkers(kind, ids) {
-  markers.clear();
+export function showMarkers(kind, ids, append = false) {
+  if (!append) markers.clear();
   for (const id of ids) {
     const g = new THREE.Group(); g.userData = { kind, id };
     if (kind === 'vertex') {
@@ -695,6 +696,7 @@ function setupInput(canvas) {
       const c = S.tiles[S.center];
       if (best) infoHandler('port', best.type, e.clientX, e.clientY);
       else if (c && Math.hypot(c.x - gp.x, c.z - gp.z) < 0.5) infoHandler('phare', null, e.clientX, e.clientY);
+      else if (seaTap(gp)) { lastTap.t = 0; return; }
     }
     // Double-tap ailleurs : zoom avant ou retour à la vue d'ensemble
     const now = performance.now();
@@ -706,6 +708,116 @@ function setupInput(canvas) {
   canvas.addEventListener('pointercancel', e => { clearTimeout(longTimer); end(e); });
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('wheel', e => { e.preventDefault(); zoomAround(e.clientX, e.clientY, zoomT * Math.exp(e.deltaY * 0.0015)); }, { passive: false });
+}
+
+
+/* ---------- Vie marine : bateaux de pêche, dauphins, poissons ----------
+   Deux bateaux font le tour de l'île, des dauphins sautent de temps en temps.
+   Toucher la mer fait sauter un dauphin ; toucher un bateau, il tangue et un poisson s'échappe. */
+const SEA_Y = -0.2;
+function makeBoat(col) {
+  const g = new THREE.Group();
+  const hull = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.1, 0.18), mat('#8a5a34')));
+  hull.position.y = 0.04; g.add(hull);
+  const bow = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.16, 4), mat('#8a5a34')));
+  bow.rotation.z = -Math.PI / 2; bow.rotation.x = Math.PI / 4; bow.position.set(0.3, 0.04, 0); bow.scale.set(1, 1, 0.75); g.add(bow);
+  const rim = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.025, 0.19), mat(col)); rim.position.y = 0.1; g.add(rim);
+  const cabin = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.1, 0.12), mat('#f2ede2'))); cabin.position.set(-0.1, 0.16, 0); g.add(cabin);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.025, 0.14), mat(col)); roof.position.set(-0.1, 0.22, 0); g.add(roof);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.36, 4), mat('#3b2a1c')); mast.position.set(0.07, 0.28, 0); g.add(mast);
+  const sailShape = new THREE.Shape(); sailShape.moveTo(0, 0); sailShape.lineTo(0, 0.28); sailShape.lineTo(0.16, 0); sailShape.lineTo(0, 0);
+  const sail = new THREE.Mesh(new THREE.ShapeGeometry(sailShape), mat('#fff8ec', { side: THREE.DoubleSide })); sail.position.set(0.08, 0.13, 0); g.add(sail);
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 3), mat('#3b2a1c')); rod.position.set(-0.22, 0.17, 0.05); rod.rotation.z = 0.9; g.add(rod);
+  g.scale.setScalar(1.4);
+  return g;
+}
+function makeDolphin() {
+  const g = new THREE.Group();
+  const body = shadowed(new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.26, 4, 8), mat('#5f8fb0', { flatShading: false })));
+  body.rotation.z = Math.PI / 2; g.add(body);
+  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.2, 4, 8), mat('#dfeaf2', { flatShading: false }));
+  belly.rotation.z = Math.PI / 2; belly.position.y = -0.025; g.add(belly);
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.09, 4), mat('#5f8fb0')); fin.position.set(-0.01, 0.07, 0); fin.rotation.z = -0.4; g.add(fin);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.06, 4), mat('#5f8fb0')); tail.position.set(-0.21, 0, 0); tail.rotation.z = Math.PI / 2; tail.scale.set(1, 1, 0.3); g.add(tail);
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.03, 0.06, 6), mat('#5f8fb0')); nose.rotation.z = -Math.PI / 2; nose.position.set(0.2, -0.01, 0); g.add(nose);
+  g.scale.setScalar(1.7);
+  return g;
+}
+function makeFish() {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), mat('#ff9a3c')); b.scale.set(1.6, 1, 0.6); g.add(b);
+  const t = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.05, 4), mat('#ff9a3c')); t.rotation.z = Math.PI / 2; t.position.x = -0.07; g.add(t);
+  return g;
+}
+const splashMat = new THREE.MeshBasicMaterial({ color: '#e8f6ff', transparent: true, opacity: 0.8, depthWrite: false });
+function splash(x, z, size = 1) {
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.09, 20), splashMat.clone());
+  ring.rotation.x = -Math.PI / 2; ring.position.set(x, SEA_Y + 0.03, z); world.add(ring);
+  const drops = [];
+  for (let i = 0; i < 6; i++) { const d = new THREE.Mesh(new THREE.SphereGeometry(0.018, 5, 4), splashMat); d.position.set(x, SEA_Y + 0.05, z); d.userData.v = [(Math.random() - 0.5) * 0.8, 1 + Math.random(), (Math.random() - 0.5) * 0.8]; world.add(d); drops.push(d); }
+  tween(0.8, k => {
+    ring.scale.setScalar((1 + k * 4) * size); ring.material.opacity = 0.8 * (1 - k);
+    for (const d of drops) { const [vx, vy, vz] = d.userData.v, t = k * 0.6; d.position.set(x + vx * t * size, SEA_Y + 0.05 + (vy * t - 2.6 * t * t) * size, z + vz * t * size); }
+  }, () => { world.remove(ring); ring.material.dispose(); drops.forEach(d => world.remove(d)); });
+}
+/* Saut en arc : départ et arrivée dans l'eau, le corps suit la courbe */
+function leap(obj, x, z, dir, len = 1.4, h = 0.75, dur = 1.25) {
+  const dx = Math.cos(dir), dz = Math.sin(dir);
+  obj.rotation.set(0, -dir, 0); world.add(obj);
+  splash(x, z, 0.8);
+  tween(dur, k => {
+    const px = x + dx * len * k, pz = z + dz * len * k, py = SEA_Y - 0.05 + Math.sin(k * Math.PI) * h;
+    obj.position.set(px, py, pz);
+    obj.rotation.z = Math.cos(k * Math.PI) * 0.9; // nez vers le haut puis vers le bas
+  }, () => { world.remove(obj); splash(x + dx * len, z + dz * len, 0.9); });
+}
+export function dolphinAt(x, z) {
+  const dir = Math.random() * Math.PI * 2;
+  leap(makeDolphin(), x - Math.cos(dir) * 0.55, z - Math.sin(dir) * 0.55, dir);
+  if (Math.random() < 0.5) setTimeout(() => leap(makeDolphin(), x - Math.cos(dir) * 0.35 + 0.18, z - Math.sin(dir) * 0.35 + 0.18, dir, 1, 0.45, 1.05), 260);
+}
+const boats = [];
+function placeBoats() {
+  boats.length = 0;
+  ['#c8402f', '#2f7fb8'].forEach((col, i) => {
+    const b = makeBoat(col); b.userData = { a: i * Math.PI + 0.6, speed: 0.045 + i * 0.012, hop: 0 };
+    world.add(b); boats.push(b);
+  });
+}
+function seaRadius() { return { rx: extent + 0.9, rz: extentZ + 0.7 }; }
+function updateSeaLife(dt, time) {
+  const { rx, rz } = seaRadius();
+  for (const b of boats) {
+    const u = b.userData; u.a += u.speed * dt;
+    const x = Math.cos(u.a) * rx, z = Math.sin(u.a) * rz;
+    b.position.set(x, SEA_Y + 0.01 + Math.sin(time * 1.6 + u.a * 7) * 0.012 + Math.sin(u.hop * Math.PI) * 0.18, z);
+    b.rotation.y = -Math.atan2(Math.cos(u.a) * rz, -Math.sin(u.a) * rx);
+    b.rotation.x = Math.sin(time * 1.3 + u.a) * 0.06 + Math.sin(u.hop * Math.PI * 3) * 0.25 * (u.hop > 0 ? 1 : 0);
+    if (u.hop > 0) u.hop = Math.max(0, u.hop - dt / 0.9);
+  }
+  // Un dauphin de temps en temps, quelque part autour de l'île
+  nextDolphin -= dt;
+  if (nextDolphin <= 0 && !document.hidden) {
+    nextDolphin = 7 + Math.random() * 8;
+    const a = Math.random() * Math.PI * 2, k = 1.05 + Math.random() * 0.35;
+    dolphinAt(Math.cos(a) * (rx + 0.3) * k, Math.sin(a) * (rz + 0.3) * k);
+  }
+}
+let nextDolphin = 4;
+/* Toucher la mer : bateau touché → il tangue et un poisson saute ; sinon un dauphin */
+function seaTap(p) {
+  if (!S) return false;
+  if (S.tiles.some(t => Math.hypot(t.x - p.x, t.z - p.z) < 0.95)) return false;
+  for (const b of boats) {
+    if (Math.hypot(b.position.x - p.x, b.position.z - p.z) < 0.45) {
+      b.userData.hop = 1; splash(b.position.x, b.position.z, 1.2);
+      const dir = Math.random() * Math.PI * 2;
+      leap(makeFish(), b.position.x + Math.cos(dir) * 0.2, b.position.z + Math.sin(dir) * 0.2, dir, 0.5, 0.4, 0.8);
+      return true;
+    }
+  }
+  dolphinAt(p.x, p.z);
+  return true;
 }
 
 /* Qualité adaptative : si le téléphone peine, on baisse la résolution, puis les ombres */
@@ -739,6 +851,7 @@ function loop() {
     for (const t of view.tiles) if (t?.fog) t.fog.children.forEach(m => { m.position.y = 0.18 + Math.sin(time * 0.8 + m.userData.phase) * 0.03; m.rotation.y = time * 0.1 + m.userData.phase; });
     for (const o of view.vertexObjs.values()) if (o.userData.flag) o.userData.flag.rotation.y = Math.sin(time * 3 + o.position.x) * 0.35;
     view.robber.rotation.y = Math.sin(time * 0.6) * 0.4;
+    updateSeaLife(dt, time);
   }
   glow.opacity = 0.55 + Math.sin(time * 5) * 0.3;
   sea.material.color.lerp(seaTarget, 0.04);
