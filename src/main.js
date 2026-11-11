@@ -1,6 +1,6 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
-  legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
+  legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
 import { spriteSheet, icon } from './icons.js';
@@ -84,6 +84,7 @@ function stepLabel(st) {
   if (st.phase === 'setup') return st.setupSub === 'camp' ? 'Pose un camp' : 'Trace un sentier';
   if (st.phase === 'roll') return 'Lance les dés';
   if (st.phase === 'robber') return 'Déplace le Rôdeur';
+  if (st.phase === 'discard') return 'Défausses en cours';
   if (st.offer) return 'Propose un échange';
   return 'Construit';
 }
@@ -149,6 +150,12 @@ function refreshInteraction() {
   const st = S(); if (!st) return;
   const me = myPid(), cur = st.players[st.current];
   if (st.phase === 'over') { clearMarkers(); hint(''); return; }
+  if (st.phase === 'discard') {
+    clearMarkers(); uiMode = null;
+    const names = Object.keys(st.discard || {}).map(i => st.players[i].nom);
+    hint(`En attente de la défausse : ${names.join(', ')}`);
+    return;
+  }
   if (!isMyTurn() || waiting) {
     if (!waiting && canQuickBuild() && uiMode && canBuild(st, me, uiMode)) {
       if (uiMode === 'sentier') { showMarkers('edge', legalRoads(st, me)); hint('Hors tour : touchez un emplacement pour tracer le sentier'); }
@@ -173,7 +180,36 @@ function refreshInteraction() {
   clearMarkers();
   hint(st.phase === 'roll' ? `${cur.nom} : lancez les dés` : `${cur.nom} : construisez ou échangez`);
 }
-function refreshAll() { renderHUD(); refreshInteraction(); }
+function refreshAll() { renderHUD(); refreshInteraction(); renderDiscard(); }
+
+/* ---------- Défausse sur un 7 : chaque joueur concerné choisit ses cartes ---------- */
+let discardPick = {}, discardFor = null;
+function discardPid() {
+  const st = S(); if (!st || st.phase !== 'discard' || !st.discard) return -1;
+  if (session.mode === 'local') { const k = Object.keys(st.discard); return k.length ? +k[0] : -1; }
+  const me = myPid(); return st.discard[me] != null ? me : -1;
+}
+function renderDiscard() {
+  const ov = $('discardOverlay'), pid = discardPid();
+  if (pid < 0 || waiting) { if (ov.classList.contains('show')) ov.classList.remove('show'); discardFor = null; return; }
+  const st = S(), p = st.players[pid], need = st.discard[pid];
+  if (discardFor !== `${st.seq}:${pid}`) { if (!discardFor || !discardFor.endsWith(`:${pid}`)) discardPick = {}; discardFor = `${st.seq}:${pid}`; }
+  const n = Object.values(discardPick).reduce((a, b) => a + b, 0);
+  $('discardTitle').textContent = session.mode === 'local' ? `${p.nom} : défaussez ${need} cartes` : `Défaussez ${need} cartes`;
+  $('discardText').textContent = `Vous avez ${total(p)} cartes, plus de 7 : choisissez la moitié à rendre à la banque. ${n} / ${need} choisies.`;
+  $('pickDiscard').innerHTML = RES.map(r => { const k = discardPick[r] || 0; return `<div>${icon(r)}<span class="cnt ${k ? '' : 'zero'}">${k}</span><small class="of">/ ${p.res[r]}</small>
+    <span class="pm"><button type="button" data-r="${r}" data-d="-1" ${k ? '' : 'disabled'} aria-label="Garder un ${RES_INFO[r].nom}">−</button><button type="button" data-r="${r}" data-d="1" ${k < p.res[r] && n < need ? '' : 'disabled'} aria-label="Défausser un ${RES_INFO[r].nom}">+</button></span></div>`; }).join('');
+  $('pickDiscard').querySelectorAll('button').forEach(b => b.onclick = () => { const r = b.dataset.r; discardPick[r] = Math.max(0, (discardPick[r] || 0) + +b.dataset.d); renderDiscard(); });
+  $('btnDiscard').disabled = n !== need;
+  $('btnDiscard').textContent = n === need ? `Défausser ${need} cartes` : `Encore ${need - n} à choisir`;
+  if (!ov.classList.contains('show')) { for (const o of document.querySelectorAll('.overlay')) if (o !== ov) o.classList.remove('show'); ov.classList.add('show'); }
+}
+$('btnDiscard').onclick = () => {
+  const pid = discardPid(); if (pid < 0) return;
+  const cards = Object.fromEntries(Object.entries(discardPick).filter(([, k]) => k > 0));
+  discardPick = {}; discardFor = null; $('discardOverlay').classList.remove('show');
+  act({ t: 'discard', cards, pid });
+};
 
 /* ---------- Réception d'un nouvel état ---------- */
 function onNewState(state, events, sequential) {
@@ -254,6 +290,10 @@ function autoPlay(st) {
       const c = legalCamps(st, pid, true).sort((x, y) => score(y) - score(x)); if (c.length) a = { t: 'camp', v: c[0] };
     } else { const r = legalRoads(st, pid, true); if (r.length) a = { t: 'road', e: r[0] }; }
   } else if (st.phase === 'roll') a = { t: 'roll' };
+  else if (st.phase === 'discard') {
+    for (const id of Object.keys(st.discard || {})) hostApply(+id, randomDiscard(st, +id));
+    return;
+  }
   else if (st.phase === 'robber') {
     const rivals = t => st.tiles[t].vertices.filter(v => st.vertices[v].building && st.vertices[v].building.owner !== pid).length - 2 * st.tiles[t].vertices.filter(v => st.vertices[v].building?.owner === pid).length;
     const tiles = legalRobber(st).sort((x, y) => rivals(y) - rivals(x)); if (tiles.length) a = { t: 'robber', tile: tiles[0] };
@@ -281,7 +321,7 @@ function act(action) {
   const st = S(); if (!st) return;
   uiMode = null;
   if (session.mode === 'local' || session.isHost) {
-    const pid = session.mode === 'local' ? (action.t === 'respond' ? action.pid ?? st.current : st.current) : myPid();
+    const pid = session.mode === 'local' ? (['respond', 'discard'].includes(action.t) ? action.pid ?? st.current : st.current) : myPid();
     hostApply(pid, action);
   } else {
     waiting = true; refreshAll();
@@ -501,13 +541,13 @@ function renderLobby() {
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
   $('btnLaunch').disabled = l.seats.length < min;
-  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île, avec construction pendant le tour des autres' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
+  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
 $('btnLaunch').onclick = () => {
   const l = session.lobby; if (!session.isHost || l.seats.length < (l.min || 2)) return;
-  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, quickBuild: l.seats.length > 4, turnTime: l.turnTime || 0 });
+  const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, turnTime: l.turnTime || 0 });
   session.lobby = null; session.state = st; st.seq = 1;
   deadline = 0; timerKey = null; syncTimer(st);
   session.room.send({ type: 'state', state: st, events: [] });

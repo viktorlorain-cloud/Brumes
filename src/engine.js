@@ -232,7 +232,7 @@ export function rateFor(S, pid, r) {
 }
 
 /* Construction hors tour : seulement pendant la phase principale du joueur actif */
-export const canBuildOutOfTurn = (S, pid) => !!S.quickBuild && S.phase === 'main' && pid !== S.current && pid >= 0;
+export const canBuildOutOfTurn = () => false; // construction hors tour retirée
 export function canBuild(S, pid, kind) {
   const p = S.players[pid];
   if (!p || S.phase !== 'main' || (S.current !== pid && !canBuildOutOfTurn(S, pid))) return false;
@@ -296,6 +296,30 @@ function respondOffer(S, pid, a, ev, fail) {
   return { ok: true, events: ev };
 }
 
+/* Défausse sur un 7 : {t:'discard', cards:{bois:2,...}} — jouable hors tour par chaque joueur concerné */
+function discardCards(S, pid, a, ev, fail) {
+  if (S.phase !== 'discard' || !S.discard || S.discard[pid] == null) return fail("Vous n'avez rien à défausser.");
+  const p = S.players[pid], need = S.discard[pid], cards = a.cards || {};
+  let n = 0;
+  for (const [r, k] of Object.entries(cards)) {
+    if (!RES.includes(r) || !Number.isInteger(k) || k < 0 || k > p.res[r]) return fail('Défausse impossible.');
+    n += k;
+  }
+  if (n !== need) return fail(`Choisissez exactement ${need} cartes.`);
+  for (const [r, k] of Object.entries(cards)) { p.res[r] -= k; S.bank[r] += k; }
+  delete S.discard[pid];
+  ev.push({ k: 'toast', msg: `${p.nom} défausse ${need} cartes` });
+  if (!Object.keys(S.discard).length) { S.discard = null; S.phase = 'robber'; ev.push({ k: 'toast', msg: `${S.players[S.current].nom} déplace le Rôdeur`, delay: 300 }); }
+  return { ok: true, events: ev };
+}
+/* Défausse au hasard (temps écoulé) */
+export function randomDiscard(S, pid) {
+  const p = S.players[pid], cards = {}; let k = S.discard?.[pid] || 0;
+  const left = { ...p.res };
+  while (k > 0) { const r = RES.filter(x => left[x] > 0)[Math.floor(Math.random() * RES.filter(x => left[x] > 0).length)]; left[r]--; cards[r] = (cards[r] || 0) + 1; k--; }
+  return { t: 'discard', cards };
+}
+
 /* ---------- Actions ----------
    applyAction(S, pid, action) modifie S et renvoie { ok, error, events }.
    action : {t:'camp',v} {t:'road',e} {t:'bastion',v} {t:'roll'} {t:'robber',tile} {t:'trade',give,get} {t:'end'} */
@@ -308,6 +332,8 @@ export function applyAction(S, pid, a) {
   if (!p) return fail('Joueur inconnu.');
   const outOfTurn = pid !== S.current;
   if (a.t === 'respond') return respondOffer(S, pid, a, ev, fail);
+  if (a.t === 'discard') return discardCards(S, pid, a, ev, fail);
+  if (S.phase === 'discard' && !outOfTurn) return fail('Attendez que chacun ait défaussé ses cartes.');
   if (outOfTurn && !(['road', 'camp', 'bastion'].includes(a.t) && canBuildOutOfTurn(S, pid)))
     return fail(S.quickBuild && ['road', 'camp', 'bastion'].includes(a.t) ? 'Vous pourrez construire quand le joueur actif aura lancé les dés.' : "Ce n'est pas votre tour.");
 
@@ -345,14 +371,14 @@ export function applyAction(S, pid, a) {
     const d1 = 1 + Math.floor(rand() * 6), d2 = 1 + Math.floor(rand() * 6), n = d1 + d2;
     S.dice = [d1, d2]; ev.push({ k: 'dice', d: [d1, d2], pid });
     if (n === 7) {
-      for (const q of S.players) {
-        const tot = total(q); if (tot <= 7) continue;
-        let k = Math.floor(tot / 2); const lost = k;
-        while (k > 0) { const r = pick(RES.filter(x => q.res[x] > 0)); q.res[r]--; S.bank[r]++; k--; }
-        ev.push({ k: 'toast', msg: `${q.nom} défausse ${lost} cartes`, delay: 700 });
-      }
+      // Au-delà de 7 cartes, chaque joueur choisit lui-même la moitié (arrondie en dessous) à défausser
+      S.discard = {};
+      for (const q of S.players) { const tot = total(q); if (tot > 7) S.discard[q.id] = Math.floor(tot / 2); }
       ev.push({ k: 'toast', msg: '7 : le Rôdeur sort de la brume', delay: 700 });
-      S.phase = 'robber';
+      if (Object.keys(S.discard).length) {
+        S.phase = 'discard';
+        ev.push({ k: 'toast', msg: `Plus de 7 cartes : ${Object.keys(S.discard).map(i => S.players[i].nom).join(', ')} ${Object.keys(S.discard).length > 1 ? 'doivent' : 'doit'} défausser la moitié de sa main`, delay: 1000, ms: 3500 });
+      } else { S.discard = null; S.phase = 'robber'; }
       return { ok: true, events: ev };
     }
     const res = produce(S, n);

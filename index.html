@@ -185,6 +185,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 .pick > div { display: grid; justify-items: center; gap: 4px; background: rgba(255, 255, 255, 0.04); border-radius: 12px; padding: 7px 2px; }
 .pick .cnt { font-family: var(--display); font-weight: 600; font-size: 17px; line-height: 1; }
 .pick .cnt.zero { color: #5d7482; }
+.pick .of { font-size: 10.5px; color: var(--ink-soft); margin-top: -3px; }
 .pick .pm { display: flex; gap: 4px; }
 .pick .pm button { width: 24px; height: 24px; border-radius: 8px; border: 0; background: var(--panel-3); font-size: 15px; line-height: 1; padding: 0; }
 .pick .pm button:disabled { opacity: 0.3; }
@@ -318,7 +319,6 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
         <li>2 ou 3 fois par partie, une marée change la production ou la valeur d'une ressource. Elle est annoncée un tour à l'avance.</li>
         <li>Un camp au contact du Phare échange à 2 contre 1 la ressource de la marée en cours (3 contre 1 sinon).</li>
         <li>Sur un 7, le Rôdeur bloque une tuile et vole une carte. Au-delà de 7 cartes, on en défausse la moitié.</li>
-        <li>À 5 ou 6 en ligne, chacun peut construire pendant le tour des autres, une fois les dés lancés.</li>
       </ul>
     </details>
     <div class="stack" id="installHelp">
@@ -359,6 +359,17 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
       <div id="tradeSummary"></div>
       <div class="row2"><button class="ghost" id="btnBankClose" type="button">Fermer</button><button class="big" id="btnTrade" type="button">Échanger</button></div>
     </div>
+  </div>
+</div>
+
+<!-- Défausse sur un 7 -->
+<div class="overlay" id="discardOverlay">
+  <div class="sheet">
+    <span class="eyebrow">7 : le Rôdeur sort de la brume</span>
+    <h2 id="discardTitle">Défaussez des cartes</h2>
+    <p id="discardText"></p>
+    <div class="pick" id="pickDiscard"></div>
+    <button class="big" id="btnDiscard" type="button">Défausser</button>
   </div>
 </div>
 
