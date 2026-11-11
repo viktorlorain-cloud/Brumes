@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, DEV_INFO, publicVp, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, SIZES, generateIsland } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers } from './view.js';
 import { openRoom, preloadNet } from './net.js';
@@ -74,9 +74,9 @@ function plateHTML(st, q, me, online) {
   const mine = online ? q.id === me : false;
   const pieces = k => LIMITS[k] - (q.built?.[k] || 0);
   return `<div class="pc ${active ? 'active' : ''} ${away ? 'away' : ''} ${mine ? 'me' : ''}" data-pid="${q.id}" style="--c:${q.col}">
-    <div class="pc-head"><span class="vp" title="Points de victoire">${vp(q)}</span><b>${esc(q.nom)}</b></div>
-    <div class="pc-row"><span title="Cartes en main">${icon('carte')}${total(q)}</span><span title="Jetons de Fortune">${icon('fortune')}${q.fortune}</span></div>
-    <div class="pc-row bonus"><span class="${q.chemin ? 'held' : ''}" title="Plus long sentier${q.chemin ? ' · Grand Chemin (+2)' : ''}">${icon('sentier')}${q.roadLen || 0}</span><span class="${q.rodeur ? 'held' : ''}" title="Rôdeur déplacé${q.rodeur ? ' · Maître du Rôdeur (+2)' : ''}">${icon('voleur')}${q.robberMoves || 0}</span></div>
+    <div class="pc-head"><span class="vp" title="Points de victoire">${mine || (session.mode === 'local' && q.id === st.current) ? vp(q) : publicVp(q)}</span><b>${esc(q.nom)}</b></div>
+    <div class="pc-row"><span title="Cartes en main">${icon('carte')}${total(q)}</span><span title="Cartes mystères">${'<span class="qmini">?</span>'}${(q.dev || []).length}</span><span title="Jetons de Fortune">${icon('fortune')}${q.fortune}</span></div>
+    <div class="pc-row bonus"><span class="${q.chemin ? 'held' : ''}" title="Plus long sentier${q.chemin ? ' · Grand Chemin (+2)' : ''}">${icon('sentier')}${q.roadLen || 0}</span><span class="${q.rodeur ? 'held' : ''}" title="Éclaireurs joués${q.rodeur ? ' · Maître du Rôdeur (+2)' : ''}">${icon('voleur')}${q.knights || 0}</span></div>
     <div class="pc-row pieces"><span title="Sentiers restants">${icon('sentier')}${pieces('sentier')}</span><span title="Camps restants">${icon('camp')}${pieces('camp')}</span><span title="Bastions restants">${icon('bastion')}${pieces('bastion')}</span></div>
     ${active ? '<div class="call"><span class="step"></span><b class="clock" hidden></b></div>' : ''}</div>`;
 }
@@ -113,8 +113,11 @@ function renderHUD() {
       const layers = Array.from({ length: Math.min(n - 1, 4) }, (_, i) => `${2 * i + 2}px ${-2 * i - 2}px 0 -1px var(--rc), ${2 * i + 2}px ${-2 * i - 2}px 0 0 rgba(8,18,26,.6)`).join(', ');
       return `<button type="button" class="rcard ${cls} ${k ? 'picked' : ''} ${canTrade ? 'pickable' : ''}" style="--k:${Math.min(n, 8)};${layers && r !== 'fortune' ? `--stack:${layers}` : ''}" data-r="${r}" title="${r === 'fortune' ? 'Jetons de Fortune' : RES_INFO[r].nom}" ${canTrade ? '' : 'tabindex="-1"'}>${icon(r)}<span class="n">${n}</span>${k ? `<span class="sel">${k}</span>` : ''}</button>`; };
     const cards = RES.filter(r => mine.res[r] > 0).map(r => card(r, `r-${r}`, mine.res[r])).join('');
-    $('hand').innerHTML = (cards || '<div class="empty">Aucune ressource</div>') + (mine.fortune ? card('fortune', 'coin', mine.fortune) : '');
-    $('hand').querySelectorAll('.rcard').forEach(b => b.onclick = () => pickCard(b.dataset.r));
+    const nDev = (mine.dev || []).length;
+    const devCard = nDev ? `<button type="button" class="rcard dev" id="handDev" style="--k:${Math.min(nDev, 8)}" title="Cartes mystères">?<span class="n">${nDev}</span></button>` : '';
+    $('hand').innerHTML = (cards || (nDev ? '' : '<div class="empty">Aucune ressource</div>')) + devCard + (mine.fortune ? card('fortune', 'coin', mine.fortune) : '');
+    $('handDev')?.addEventListener('click', () => { devPick = {}; renderDev(true); });
+    $('hand').querySelectorAll('.rcard[data-r]').forEach(b => b.onclick = () => pickCard(b.dataset.r));
     fitHand();
   } else $('hand').innerHTML = '<div class="empty">Vous regardez la partie</div>';
   const mt = isMyTurn() && !waiting;
@@ -157,7 +160,8 @@ function fitHand() {
 window.addEventListener('resize', () => { if (S()) fitHand(); });
 /* Banque : cartes restantes de chaque ressource */
 function renderBankBar(st) {
-  $('bankBar').innerHTML = `${icon('banque')}` + RES.map(r => `<span class="${st.bank[r] <= 3 ? 'low' : ''}" title="${RES_INFO[r].nom} en banque">${icon(r)}${st.bank[r]}</span>`).join('');
+  $('bankBar').innerHTML = `${icon('banque')}` + RES.map(r => `<span class="${st.bank[r] <= 3 ? 'low' : ''}" title="${RES_INFO[r].nom} en banque">${icon(r)}${st.bank[r]}</span>`).join('') +
+    `<span title="Cartes mystères dans la pioche"><span class="qmini">?</span>${st.devDeck?.length ?? 0}</span>`;
 }
 /* Les cartes gagnées tombent dans la main, avec leur « +N » */
 function dropGains() {
@@ -215,6 +219,11 @@ function refreshInteraction() {
   if (uiMode === 'camp') { showMarkers('vertex', legalCamps(st, me)); hint('Touchez une intersection lumineuse pour installer le camp'); return; }
   if (uiMode === 'bastion') { showMarkers('vertex', legalBastions(st, me)); hint('Touchez un de vos camps pour en faire un bastion'); return; }
   // Si on a de quoi construire, les emplacements possibles s'allument d'eux-mêmes
+  if (st.phase === 'main' && st.freeRoads > 0 && isMyTurn()) {
+    clearMarkers(); showMarkers('edge', legalRoads(st, me)); uiMode = null;
+    hint(`Bâtisseurs : tracez encore ${st.freeRoads} sentier${st.freeRoads > 1 ? 's' : ''} gratuit${st.freeRoads > 1 ? 's' : ''}`);
+    return;
+  }
   if (st.phase === 'main' && !st.offer) {
     const sug = suggestions(st, me);
     if (sug.length) {
@@ -237,7 +246,7 @@ function suggestions(st, me) {
   return out;
 }
 let closedAt = 0; // un toucher qui ferme un panneau ne construit rien
-function refreshAll() { renderHUD(); refreshInteraction(); renderDiscard(); renderClaim(); }
+function refreshAll() { renderHUD(); refreshInteraction(); renderDiscard(); renderClaim(); renderDev(); }
 
 /* ---------- Défausse sur un 7 : chaque joueur concerné choisit ses cartes ---------- */
 let discardPick = {}, discardFor = null;
@@ -473,7 +482,8 @@ function renderCosts() {
     `<div class="costRow">${icon(p.ico)}<span><b>${p.nom}</b><small>${p.pts}</small></span><span class="costs">${costIcons(st, k)}</span></div>`).join('') +
     (st.tide?.type === 'chantier-sentier' ? '<div class="note">Marée en cours : le sentier coûte moins cher.</div>' : '') +
     `<div class="costRow">${icon('sentier')}<span><b>Grand Chemin</b><small>plus long sentier, 5 min.</small></span><span class="costs"><b>+2</b></span></div>` +
-    `<div class="costRow">${icon('voleur')}<span><b>Maître du Rôdeur</b><small>Rôdeur déplacé 3 fois min.</small></span><span class="costs"><b>+2</b></span></div>`;
+    `<div class="costRow"><span class="qcard sm">?</span><span><b>Carte mystère</b><small>surprise à jouer plus tard</small></span><span class="costs">${icon('lin')}${icon('grain')}${icon('cristal')}</span></div>` +
+    `<div class="costRow">${icon('voleur')}<span><b>Maître du Rôdeur</b><small>3 Éclaireurs joués min.</small></span><span class="costs"><b>+2</b></span></div>`;
 }
 $('btnCosts').onclick = () => { costOpen = !costOpen; renderCosts(); };
 /* Toucher ailleurs sur l'écran ferme ce qui est ouvert (échange, construction, coûts, bulle, menu, règles) */
@@ -560,7 +570,54 @@ function renderTrade() {
   $('btnPropose').querySelector('small').textContent = st.players.length > 2 ? 'à tous' : 'proposer';
   const d = bankDeal();
   $('btnTrade').disabled = !d.ok; $('bankRate').textContent = d.label;
+  const me = st.players[myPid()], left = st.devDeck?.length ?? 0;
+  $('devCost').innerHTML = Object.entries({ lin: 1, grain: 1, cristal: 1 }).map(([r]) => icon(r)).join('');
+  $('devLeft').textContent = left ? `${left} dans la pioche · une surprise à jouer plus tard` : 'pioche vide';
+  $('btnBuyDev').disabled = !(me && left && canPay(me, { lin: 1, grain: 1, cristal: 1 }));
 }
+$('btnBuyDev').onclick = () => { give = {}; want = {}; tradeOpen = false; act({ t: 'buyDev' }); };
+/* Fenêtre des cartes mystères : liste, description, et choix des ressources pour Abondance et Monopole */
+let devPick = {};
+function renderDev(open = false) {
+  const st = S(), ov = $('devOverlay');
+  if (!st) return;
+  const pid = session.mode === 'local' ? st.current : myPid(), p = st.players[pid];
+  if (!open && !ov.classList.contains('show')) return;
+  if (!p) { ov.classList.remove('show'); return; }
+  const mine = p.dev || [], turn = st.turnNo || 0, myTurn = st.current === pid && !waiting;
+  const groups = {}; mine.forEach(d => { (groups[d.type] ||= { n: 0, ready: 0 }); groups[d.type].n++; if (d.turn !== turn) groups[d.type].ready++; });
+  const why = t => {
+    if (t === 'tresor') return 'compte tout seul';
+    if (!myTurn) return 'pendant votre tour';
+    if (st.devPlayed) return 'déjà une carte ce tour';
+    if (!groups[t].ready) return 'au prochain tour';
+    if (t !== 'eclaireur' && st.phase !== 'main') return 'après les dés';
+    if (!['roll', 'main'].includes(st.phase)) return 'pas maintenant';
+    return '';
+  };
+  $('devNote').textContent = mine.length ? 'Une carte par tour, jamais celle achetée pendant ce tour.' : "Vous n'avez pas encore de carte mystère. Achetez-en dans Échanger (1 lin, 1 grain, 1 cristal).";
+  $('devList').innerHTML = Object.entries(groups).map(([t, g]) => {
+    const info = DEV_INFO[t], block = why(t), need = t === 'abondance' ? 2 : t === 'monopole' ? 1 : 0;
+    const chosen = devPick[t] || [];
+    const picker = need && !block ? `<div class="devPick">${RES.map(r => `<button type="button" class="chip ${chosen.includes(r) ? 'on' : ''}" data-t="${t}" data-r="${r}" aria-label="${RES_INFO[r].nom}">${icon(r)}${chosen.filter(x => x === r).length > 1 ? '<span class="k">2</span>' : ''}</button>`).join('')}</div>` : '';
+    const ready = !block && chosen.length === need;
+    return `<div class="devItem">${icon(info.ico)}<span><b>${info.nom}<em>×${g.n}</em></b><small>${info.desc}</small></span>
+      ${t === 'tresor' ? '<small>+1 pt</small>' : `<button type="button" class="mini play" data-play="${t}" ${ready ? '' : 'disabled'}>${block || (need && chosen.length < need ? `choisir ${need - chosen.length}` : 'Jouer')}</button>`}${picker}</div>`;
+  }).join('');
+  $('devList').querySelectorAll('.devPick .chip').forEach(b => b.onclick = () => {
+    const t = b.dataset.t, r = b.dataset.r, cur = devPick[t] || [];
+    if (t === 'monopole') devPick[t] = [r];
+    else devPick[t] = cur.length >= 2 ? [r] : [...cur, r];
+    renderDev();
+  });
+  $('devList').querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
+    const t = b.dataset.play, a = { t: 'playDev', type: t };
+    if (t === 'abondance') a.res = devPick[t]; if (t === 'monopole') a.res = devPick[t][0];
+    devPick = {}; ov.classList.remove('show'); act(a);
+  });
+  if (open && !ov.classList.contains('show')) { for (const o of document.querySelectorAll('.overlay')) o.classList.remove('show'); ov.classList.add('show'); }
+}
+$('btnDevClose').onclick = () => $('devOverlay').classList.remove('show');
 $('btnBank').onclick = () => { tradeOpen = !tradeOpen; buildOpen = false; uiMode = null; refreshAll(); };
 $('btnPropose').onclick = () => { const a = { t: 'offer', give: { ...give }, want: { ...want } }; give = {}; want = {}; tradeOpen = false; act(a); };
 $('btnTrade').onclick = () => { const d = bankDeal(); if (!d.ok) return; give = {}; want = {}; tradeOpen = false; act({ t: 'trade', give: d.give, get: d.get }); };

@@ -277,6 +277,25 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 #lobbySeats li small { font-size: 11px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
 #lobbySeats li small.off { color: #ffb4a8; }
 #lobbySeats li.free { color: var(--ink-soft); background: transparent; border: 1px dashed var(--line); }
+/* Cartes mystères */
+.tp-dev { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; text-align: left; border: 1px solid rgba(160, 120, 255, 0.45); background: rgba(138, 109, 255, 0.14); border-radius: 12px; padding: 7px 10px; }
+.tp-dev b { display: block; font-family: var(--display); font-weight: 500; font-size: 14px; }
+.tp-dev small { font-size: 10.5px; color: var(--ink-soft); }
+.tp-dev .costs .ico { width: 20px; height: 20px; }
+.tp-dev:disabled { opacity: 0.45; cursor: default; }
+.qmini { display: inline-grid; place-items: center; width: 12px; height: 15px; border-radius: 3px; background: #7a5cf0; color: #fff; font-size: 10px; font-family: var(--display); font-weight: 600; margin-right: 2px; }
+.qcard.sm { width: 20px; height: 26px; font-size: 14px; }
+.qcard { width: 26px; height: 34px; border-radius: 6px; display: grid; place-items: center; background: linear-gradient(160deg, #a58bff, #6c4ee0); color: #fff; font-family: var(--display); font-weight: 600; font-size: 18px; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35); }
+.rcard.dev { --rc: #7a5cf0; color: #fff; font-family: var(--display); font-weight: 600; font-size: 24px; }
+.devItem { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); }
+.devItem > .ico { width: 34px; height: 34px; }
+.devItem b { font-family: var(--display); font-weight: 500; font-size: 15px; }
+.devItem b em { font-style: normal; color: var(--lamp); margin-left: 4px; }
+.devItem small { display: block; font-size: 11.5px; color: var(--ink-soft); line-height: 1.35; }
+.devItem .mini.play { background: var(--lamp); color: #2a1d05; border: 0; }
+.devItem .mini.play:disabled { background: var(--panel-2); color: var(--ink-soft); font-size: 11.5px; opacity: 1; }
+.devPick { grid-column: 1 / -1; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.devPick .chip.on { border-color: var(--lamp); background: rgba(255, 207, 107, 0.18); }
 .seat { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); text-align: left; font-size: 15px; }
 .seat b { margin-right: auto; }
 .seat small { font-size: 11.5px; color: var(--lamp); }
@@ -357,6 +376,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
       <button type="button" class="tp-btn" id="btnPropose">Joueurs<small>proposer</small></button>
       <button type="button" class="tp-btn bank" id="btnTrade">Banque<small id="bankRate">4:1</small></button>
     </div>
+    <button type="button" class="tp-dev" id="btnBuyDev"><span class="qcard">?</span><span><b>Carte mystère</b><small id="devLeft"></small></span><span class="costs" id="devCost"></span></button>
   </div>
   <div id="buildPanel" class="drawer" hidden>
     <button type="button" class="bopt" id="btnSentier"><svg class="ico" aria-hidden="true"><use href="#i-sentier"/></svg><span class="lb">Sentier</span><span class="co"></span></button>
@@ -426,7 +446,8 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
         <li>Un camp au contact du Phare échange à 2 contre 1 la ressource de la marée en cours (3 contre 1 sinon).</li>
         <li>Sur un 7, le Rôdeur bloque une tuile et vole une carte. Au-delà de 7 cartes, on en défausse la moitié.</li>
         <li>Grand Chemin : le plus long sentier continu (5 au moins) rapporte 2 points. On le perd si quelqu'un fait plus long, ou si un camp adverse coupe le sentier.</li>
-        <li>Maître du Rôdeur : celui qui a déplacé le Rôdeur le plus souvent (3 fois au moins) gagne 2 points, jusqu'à ce qu'un autre le dépasse.</li>
+        <li>Cartes mystères (1 lin, 1 grain, 1 cristal, dans Échanger) : Éclaireur (déplace le Rôdeur), Trésor (1 point secret), Bâtisseurs (2 sentiers gratuits), Abondance (2 ressources au choix), Monopole (tous les autres vous donnent une ressource). Une par tour, jamais celle achetée pendant ce tour.</li>
+        <li>Maître du Rôdeur : celui qui a joué le plus d'Éclaireurs (3 au moins) gagne 2 points, jusqu'à ce qu'un autre le dépasse.</li>
       </ul>
     </details>
     <div class="stack" id="installHelp">
@@ -458,6 +479,17 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
     <p>Touchez votre nom pour reprendre votre place, vos cartes et vos constructions.</p>
     <div class="stack" id="claimList"></div>
     <button class="ghost" id="btnClaimWatch" type="button">Regarder seulement</button>
+  </div>
+</div>
+
+<!-- Cartes mystères -->
+<div class="overlay" id="devOverlay">
+  <div class="sheet">
+    <span class="eyebrow">Cartes mystères</span>
+    <h2>Vos cartes</h2>
+    <p id="devNote">Une carte par tour, jamais celle achetée pendant ce tour.</p>
+    <div class="stack" id="devList"></div>
+    <button class="ghost" id="btnDevClose" type="button">Fermer</button>
   </div>
 </div>
 

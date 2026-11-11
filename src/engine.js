@@ -16,7 +16,19 @@ const TERRAIN_COUNTS_BIG = { bois: 7, pierre: 5, lin: 7, grain: 6, cristal: 5 };
 const NUMBERS = [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12];
 const NUMBERS_BIG = [2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 11, 11, 11, 12, 12];
 export const PIPS = n => 6 - Math.abs(7 - n);
-const BASE_COSTS = { sentier: { bois: 1, pierre: 1 }, camp: { bois: 1, pierre: 1, lin: 1, grain: 1 }, bastion: { grain: 2, cristal: 3 } };
+const BASE_COSTS = { sentier: { bois: 1, pierre: 1 }, camp: { bois: 1, pierre: 1, lin: 1, grain: 1 }, bastion: { grain: 2, cristal: 3 }, mystere: { lin: 1, grain: 1, cristal: 1 } };
+/* Cartes mystères (comme les cartes développement du jeu de base) */
+export const DEV_INFO = {
+  eclaireur: { nom: 'Éclaireur', ico: 'voleur', desc: 'Déplacez le Rôdeur et volez une carte. Compte pour le titre de Maître du Rôdeur.' },
+  tresor: { nom: 'Trésor', ico: 'fortune', desc: '1 point de victoire, gardé secret jusqu\'à la fin.' },
+  batisseurs: { nom: 'Bâtisseurs', ico: 'sentier', desc: 'Tracez 2 sentiers gratuitement.' },
+  abondance: { nom: 'Abondance', ico: 'grain', desc: 'Prenez 2 ressources au choix à la banque.' },
+  monopole: { nom: 'Monopole', ico: 'banque', desc: 'Choisissez une ressource : tous les autres joueurs vous donnent leurs cartes de ce type.' },
+};
+function buildDevDeck(big) {
+  const n = big ? { eclaireur: 20, tresor: 5, batisseurs: 3, abondance: 3, monopole: 3 } : { eclaireur: 14, tresor: 5, batisseurs: 2, abondance: 2, monopole: 2 };
+  return shuffle(Object.entries(n).flatMap(([k, c]) => Array(c).fill(k)));
+}
 export const LIMITS = { sentier: 15, camp: 5, bastion: 4 };
 export const PLAYER_DEFS = [
   { nom: 'Corail', col: '#ef5b4c' }, { nom: 'Lagon', col: '#22b3a4' },
@@ -257,6 +269,7 @@ export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 
     setupOrder: [...Array(n).keys(), ...[...Array(n).keys()].reverse()],
     setupStep: 0, setupSub: 'camp', lastCamp: null,
     robber: isl.center, tidePlan: [], tide: null, nextTide: null, dice: null, winner: null, offer: null,
+    devDeck: buildDevDeck(n > 4), turnNo: 0, devPlayed: false, freeRoads: 0, afterRobber: null,
   };
   rand = Math.random;
   S.eventDeck = buildTideDeck();
@@ -266,10 +279,11 @@ export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 
 
 /* ---------- Lectures ---------- */
 export const total = p => RES.reduce((s, r) => s + p.res[r], 0);
-export const vp = p => p.built.camp + 2 * p.built.bastion + (p.chemin ? 2 : 0) + (p.rodeur ? 2 : 0);
+export const publicVp = p => p.built.camp + 2 * p.built.bastion + (p.chemin ? 2 : 0) + (p.rodeur ? 2 : 0);
+export const vp = p => publicVp(p) + (p.dev || []).filter(d => d.type === 'tresor').length; // les Trésors comptent, en secret
 /* Bonus comme dans le jeu de base : « Grand Chemin » (le plus long sentier continu, 5 au moins)
    et « Maître du Rôdeur » (le Rôdeur déplacé le plus souvent, 3 fois au moins). 2 points chacun. */
-export const BONUS_MIN = { chemin: 5, rodeur: 3 };
+export const BONUS_MIN = { chemin: 5, rodeur: 3 }; // Maître du Rôdeur : 3 Éclaireurs joués au moins
 /* Plus long sentier d'un joueur : on suit ses sentiers sans repasser deux fois par le même,
    et un camp adverse coupe le chemin à son intersection. */
 export function longestRoad(S, pid) {
@@ -306,6 +320,7 @@ function updateLongest(S, ev) {
   else if (holder) ev.push({ k: 'toast', msg: `${holder.nom} perd le Grand Chemin (sentier coupé)`, ms: 3800 });
 }
 export function costOf(S, kind) {
+  if (kind === 'sentier' && S.freeRoads > 0) return {}; // carte Bâtisseurs
   if (kind === 'sentier' && S.tide?.type === 'chantier-sentier') return { bois: 1 };
   return BASE_COSTS[kind];
 }
@@ -410,6 +425,48 @@ function respondOffer(S, pid, a, ev, fail) {
   return { ok: true, events: ev };
 }
 
+/* Jouer une carte mystère : une par tour, jamais celle achetée pendant ce tour.
+   L'Éclaireur peut se jouer avant ou après les dés ; les autres après les dés. */
+function playDev(S, p, a, ev, fail) {
+  if (S.current !== p.id) return fail("Ce n'est pas votre tour.");
+  if (!['roll', 'main'].includes(S.phase)) return fail('Pas maintenant.');
+  if (S.devPlayed) return fail('Une seule carte mystère par tour.');
+  const i = (p.dev || []).findIndex(d => d.type === a.type && d.turn !== (S.turnNo || 0));
+  if (i < 0) return fail((p.dev || []).some(d => d.type === a.type) ? 'Une carte achetée ce tour ne se joue qu\'au prochain.' : "Vous n'avez pas cette carte.");
+  if (a.type === 'tresor') return fail('Le Trésor compte tout seul, inutile de le jouer.');
+  if (a.type !== 'eclaireur' && S.phase !== 'main') return fail("Lancez d'abord les dés.");
+  if (a.type === 'abondance') {
+    const want = a.res || [];
+    if (want.length !== 2 || !want.every(r => RES.includes(r))) return fail('Choisissez 2 ressources.');
+    const need = {}; want.forEach(r => { need[r] = (need[r] || 0) + 1; });
+    if (Object.entries(need).some(([r, n]) => S.bank[r] < n)) return fail('La banque n\'en a plus assez.');
+    want.forEach(r => { S.bank[r]--; p.res[r]++; });
+    ev.push({ k: 'toast', msg: `${p.nom} joue Abondance : ${want.map(r => RES_INFO[r].nom).join(' et ')}` });
+  } else if (a.type === 'monopole') {
+    if (!RES.includes(a.res)) return fail('Choisissez une ressource.');
+    let got = 0; for (const q of S.players) if (q.id !== p.id) { got += q.res[a.res]; p.res[a.res] += q.res[a.res]; q.res[a.res] = 0; }
+    ev.push({ k: 'toast', msg: `${p.nom} joue Monopole sur ${RES_INFO[a.res].nom} : ${got} carte${got > 1 ? 's' : ''} récupérée${got > 1 ? 's' : ''}`, ms: 4000 });
+  } else if (a.type === 'batisseurs') {
+    if (!legalRoads(S, p.id).length || p.built.sentier >= LIMITS.sentier) return fail('Aucun sentier possible pour le moment.');
+    S.freeRoads = 2;
+    ev.push({ k: 'toast', msg: `${p.nom} joue Bâtisseurs : 2 sentiers gratuits` });
+  } else if (a.type === 'eclaireur') {
+    p.knights = (p.knights || 0) + 1;
+    S.afterRobber = S.phase; S.phase = 'robber';
+    ev.push({ k: 'toast', msg: `${p.nom} joue un Éclaireur : il déplace le Rôdeur` });
+    const holder = S.players.find(q => q.rodeur);
+    if (p.knights >= BONUS_MIN.rodeur && !p.rodeur && (!holder || p.knights > (holder.knights || 0))) {
+      if (holder) holder.rodeur = false;
+      p.rodeur = true;
+      ev.push({ k: 'toast', msg: `${p.nom} devient Maître du Rôdeur (${p.knights} Éclaireurs, +2 points)${holder ? ` à la place de ${holder.nom}` : ''}`, ms: 3800, delay: 900 });
+    }
+  } else return fail('Carte inconnue.');
+  p.dev.splice(i, 1); S.devPlayed = true;
+  (p.devUsed ||= []).push(a.type);
+  checkWin(S, p, ev);
+  return { ok: true, events: ev };
+}
+
 /* Défausse sur un 7 : {t:'discard', cards:{bois:2,...}} — jouable hors tour par chaque joueur concerné */
 function discardCards(S, pid, a, ev, fail) {
   if (S.phase !== 'discard' || !S.discard || S.discard[pid] == null) return fail("Vous n'avez rien à défausser.");
@@ -508,28 +565,35 @@ export function applyAction(S, pid, a) {
     if (S.phase !== 'robber') return fail('Le Rôdeur ne peut pas bouger maintenant.');
     if (!legalRobber(S).includes(a.tile)) return fail('Tuile impossible.');
     S.robber = a.tile; ev.push({ k: 'robber', tile: a.tile });
-    p.robberMoves = (p.robberMoves || 0) + 1;
-    const holder = S.players.find(q => q.rodeur);
-    if (p.robberMoves >= BONUS_MIN.rodeur && !p.rodeur && (!holder || p.robberMoves > (holder.robberMoves || 0))) {
-      if (holder) holder.rodeur = false;
-      p.rodeur = true;
-      ev.push({ k: 'toast', msg: `${p.nom} devient Maître du Rôdeur (${p.robberMoves} fois, +2 points)${holder ? ` à la place de ${holder.nom}` : ''}`, ms: 3800, delay: 1200 });
-    }
     const victims = S.players.filter(q => q.id !== pid && total(q) > 0 && S.tiles[a.tile].vertices.some(v => S.vertices[v].building?.owner === q.id));
     if (victims.length) {
       const v = pick(victims); const r = pick(RES.filter(x => v.res[x] > 0)); v.res[r]--; p.res[r]++;
       ev.push({ k: 'toast', msg: `Le Rôdeur vole ${RES_INFO[r].ic} à ${v.nom} pour ${p.nom}`, delay: 800 });
     } else ev.push({ k: 'toast', msg: 'Le Rôdeur ne trouve rien à voler', delay: 800 });
-    S.phase = 'main';
+    S.phase = S.afterRobber || 'main'; S.afterRobber = null; // un Éclaireur joué avant les dés ramène au lancer
     checkWin(S, p, ev);
     return { ok: true, events: ev };
   }
 
+  if (a.t === 'playDev') return playDev(S, p, a, ev, fail);
+
   if (S.phase !== 'main') return fail("Lancez d'abord les dés.");
+
+  if (a.t === 'buyDev') {
+    if (!S.devDeck?.length) return fail('Il ne reste plus de cartes mystères.');
+    if (!canPay(p, BASE_COSTS.mystere)) return fail('Il faut 1 lin, 1 grain et 1 cristal.');
+    pay(S, p, BASE_COSTS.mystere);
+    const type = S.devDeck.pop();
+    (p.dev ||= []).push({ type, turn: S.turnNo || 0 });
+    ev.push({ k: 'toast', msg: `${p.nom} achète une carte mystère` });
+    checkWin(S, p, ev);
+    return { ok: true, events: ev };
+  }
 
   if (a.t === 'road') {
     if (!canBuild(S, pid, 'sentier') || !legalRoads(S, pid).includes(a.e)) return fail('Sentier impossible ici.');
     pay(S, p, costOf(S, 'sentier')); S.edges[a.e].road = pid; p.built.sentier++;
+    if (S.freeRoads > 0) { S.freeRoads--; if (!legalRoads(S, pid).length || p.built.sentier >= LIMITS.sentier) S.freeRoads = 0; }
     ev.push({ k: 'road', e: a.e, pid });
     const nw = reveal(S, S.edges[a.e].tiles); if (nw.length) ev.push({ k: 'reveal', tiles: nw });
     if (outOfTurn) ev.push({ k: 'toast', msg: `${p.nom} trace un sentier pendant le tour de ${S.players[S.current].nom}` });
@@ -588,6 +652,7 @@ export function applyAction(S, pid, a) {
     return { ok: true, events: ev };
   }
   if (a.t === 'end') {
+    S.turnNo = (S.turnNo || 0) + 1; S.devPlayed = false; S.freeRoads = 0;
     S.current = (S.current + 1) % S.players.length;
     S.dice = null;
     if (S.current === 0) {
