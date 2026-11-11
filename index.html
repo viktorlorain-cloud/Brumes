@@ -69,6 +69,9 @@ body.home #top, body.home #bottom, body.home .menuBtn, body.home #costPanel, bod
 .costs .ico { width: 19px; height: 19px; }
 #costPanel .note { font-size: 11px; color: #9fe0ff; }
 #pieceTip { position: fixed; z-index: 25; transform: translate(-50%, calc(-100% - 18px)); background: rgba(8, 18, 26, 0.95); border: 1px solid var(--line); border-radius: 12px; padding: 7px 11px; box-shadow: var(--shadow); white-space: nowrap; pointer-events: none; animation: toastIn 0.15s ease-out; }
+#pieceTip.wide { white-space: normal; width: 260px; }
+#pieceTip.wide small { display: block; line-height: 1.4; margin-top: 3px; font-size: 12px; }
+#pieceTip small.now { color: var(--lamp); font-weight: 800; }
 #pieceTip b { display: block; font-family: var(--display); font-weight: 500; font-size: 14px; }
 #pieceTip small { font-size: 11px; color: var(--ink-soft); }
 #pieceTip .costs { margin-top: 4px; }

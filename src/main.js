@@ -1,7 +1,7 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard } from './engine.js';
-import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
+import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
 import { spriteSheet, icon } from './icons.js';
 
@@ -403,17 +403,32 @@ function renderCosts() {
 $('btnCosts').onclick = () => { costOpen = !costOpen; renderCosts(); };
 $('costPanel').onclick = () => { costOpen = false; renderCosts(); };
 let tipTimer = 0;
+function showTip(html, x, y, ms = 2600, wide = false) {
+  const tip = $('pieceTip');
+  tip.innerHTML = html; tip.classList.toggle('wide', wide);
+  tip.style.left = `${Math.min(window.innerWidth - (wide ? 140 : 100), Math.max(wide ? 140 : 100, x))}px`; tip.style.top = `${Math.max(150, y)}px`;
+  tip.hidden = false; tip.style.animation = 'none'; void tip.offsetWidth; tip.style.animation = '';
+  clearTimeout(tipTimer); tipTimer = setTimeout(() => { tip.hidden = true; }, ms);
+}
+/* Toucher un port ou le Phare : ses avantages en bref */
+onInfo((kind, type, x, y) => {
+  const st = S(); if (!st) return;
+  let html;
+  if (kind === 'port' && type === '3:1') html = `<b>Comptoir 3:1</b><small>Avec un camp ou un bastion sur l'un de ses deux emplacements, vous échangez à la banque 3 cartes identiques contre 1 au choix, au lieu de 4.</small>`;
+  else if (kind === 'port') html = `<b>Crique 2:1 · ${RES_INFO[type].nom} ${icon(type, 'ico sm')}</b><small>Avec un camp ou un bastion sur l'un de ses deux emplacements, vous échangez à la banque 2 ${RES_INFO[type].nom} contre 1 carte au choix.</small>`;
+  else {
+    const t = st.tide, now = t?.res && t.type !== 'chantier-carnet' ? `En ce moment : 2 ${RES_INFO[t.res].nom} ${icon(t.res, 'ico sm')} contre 1.` : 'En ce moment, sans marée : 3 cartes identiques contre 1.';
+    html = `<b>Le Phare</b><small>Un camp ou un bastion qui touche le Phare échange à 2 contre 1 la ressource de la marée en cours, et à 3 contre 1 quand il n'y a pas de marée. Le Rôdeur part d'ici.</small><small class="now">${now}</small>`;
+  }
+  showTip(html, x, y, 4500, true);
+});
 onLongPress((kind, id, x, y) => {
   const st = S(); if (!st) return;
   let k, owner;
   if (kind === 'vertex') { const b = st.vertices[id].building; k = b.type; owner = b.owner; } else { k = 'sentier'; owner = st.edges[id].road; }
   const p = PIECES[k], who = st.players[owner];
-  const tip = $('pieceTip');
-  tip.innerHTML = `<b>${p.nom} de ${esc(who.nom)}</b><small>${p.pts}</small><div class="costs">${costIcons(st, k)}</div>`;
-  tip.style.left = `${Math.min(window.innerWidth - 100, Math.max(100, x))}px`; tip.style.top = `${y}px`;
-  tip.hidden = false; tip.style.animation = 'none'; void tip.offsetWidth; tip.style.animation = '';
+  showTip(`<b>${p.nom} de ${esc(who.nom)}</b><small>${p.pts}</small><div class="costs">${costIcons(st, k)}</div>`, x, y);
   try { navigator.vibrate?.(15); } catch { /* indisponible */ }
-  clearTimeout(tipTimer); tipTimer = setTimeout(() => { tip.hidden = true; }, 2600);
 });
 
 /* ---------- Échanges : une seule section qui monte au-dessus de la barre ----------

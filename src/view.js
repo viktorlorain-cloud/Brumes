@@ -41,7 +41,8 @@ export function initView(canvas) {
   requestAnimationFrame(loop);
 }
 export function onTap(fn) { tapHandler = fn; }
-let longPressHandler = () => {};
+let longPressHandler = () => {}, infoHandler = () => {};
+export function onInfo(fn) { infoHandler = fn; }
 export function onLongPress(fn) { longPressHandler = fn; }
 /* Construction sous le doigt (appui long) : camp ou bastion le plus proche, sinon sentier */
 function builtAt(x, y) {
@@ -135,6 +136,7 @@ function field(w, d, rows, cols, soil, stalkCol, head, headCol, h) {
   g.add(stalks, heads);
   return g;
 }
+const BADGE_Z = -0.42;
 function resBadge(res) {
   const g = new THREE.Group();
   g.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.04, 24), mat(RES_INFO[res].col, { flatShading: false }))), 0, 0.06, 0));
@@ -143,7 +145,9 @@ function resBadge(res) {
   const t = canvasTex(128, 128, (c, w, h) => { if (img.complete) c.drawImage(img, 8, 8, w - 16, h - 16); });
   const ic = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 0.25), new THREE.MeshBasicMaterial({ map: t.tex, transparent: true }));
   ic.rotation.x = -Math.PI / 2; ic.position.y = 0.088; g.add(ic);
-  g.position.set(0, 0, -0.42);
+  // Toujours visible : la pastille se dessine par-dessus le décor de sa tuile
+  g.children.forEach((m, i) => { m.material = m.material.clone(); m.material.depthTest = false; m.renderOrder = 6 + i; m.castShadow = false; });
+  g.position.set(0, 0, BADGE_Z);
   return g;
 }
 function makeDecor(terrain, rot) {
@@ -216,6 +220,11 @@ function makeDecor(terrain, rot) {
         c.position.set(x + (j - 1) * 0.06, 0.1 + (j === 0) * 0.04, z + (j % 2) * 0.04); c.scale.y = 1.8; c.rotation.z = (j - 1) * 0.35; g.add(c);
       }
     }
+  }
+  // On écarte du décor l'emplacement de la pastille, pour qu'aucun élément ne la cache
+  for (const c of g.children) {
+    const dx = c.position.x, dz = c.position.z - BADGE_Z, d = Math.hypot(dx, dz);
+    if (d < 0.34) { const k = 0.34 / Math.max(d, 0.01); c.position.x = dx * k || 0.34; c.position.z = BADGE_Z + dz * k; }
   }
   if (RES.includes(terrain)) g.add(resBadge(terrain));
   return g;
@@ -340,7 +349,7 @@ export function buildView(state) {
   shallows.scale.setScalar(extent + 1);
   layoutCamera();
   world.clear(); markers.clear(); tweens.length = 0;
-  view = { tiles: [], vertexObjs: new Map(), roadObjs: new Map(), robber: null, phare: null, gameId: S.gameId };
+  view = { portSpots: [], tiles: [], vertexObjs: new Map(), roadObjs: new Map(), robber: null, phare: null, gameId: S.gameId };
   for (const t of S.tiles) {
     const g = new THREE.Group(); g.position.set(t.x, 0, t.z);
     const col = t.terrain === 'phare' ? new THREE.Color('#cbbf9f') : (t.revealed ? new THREE.Color(RES_INFO[t.terrain].col) : FOG_COL.clone());
@@ -374,6 +383,7 @@ export function buildView(state) {
     }
     const lab = portSprite(p.type);
     lab.position.set(mx + dir.x * 0.78, 0.32, mz + dir.y * 0.78); world.add(lab);
+    view.portSpots.push({ x: mx + dir.x * 0.55, z: mz + dir.y * 0.55, type: p.type });
   }
   for (const e of S.edges) if (e.road != null) { const r = roadMesh(e.id, e.road); world.add(r); view.roadObjs.set(e.id, r); }
   for (const v of S.vertices) if (v.building) {
@@ -674,6 +684,15 @@ function setupInput(canvas) {
       ray.setFromCamera(ndc, camera);
       const hits = ray.intersectObjects(markers.children, true);
       if (hits.length) { let o = hits[0].object; while (o && !o.userData.kind) o = o.parent; if (o) { tapHandler(o.userData.kind, o.userData.id); lastTap.t = 0; return; } }
+    }
+    // Toucher un port ou le Phare : petite explication
+    const gp = groundAt(e.clientX, e.clientY, zoom, pan);
+    if (gp && S && view) {
+      let best = null, bd = 0.42;
+      for (const p of view.portSpots) { const d = Math.hypot(p.x - gp.x, p.z - gp.z); if (d < bd) { bd = d; best = p; } }
+      const c = S.tiles[S.center];
+      if (best) infoHandler('port', best.type, e.clientX, e.clientY);
+      else if (c && Math.hypot(c.x - gp.x, c.z - gp.z) < 0.5) infoHandler('phare', null, e.clientX, e.clientY);
     }
     // Double-tap ailleurs : zoom avant ou retour à la vue d'ensemble
     const now = performance.now();
