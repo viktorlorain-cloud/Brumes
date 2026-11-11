@@ -1,17 +1,20 @@
 /* Couche réseau : un « salon » par code de partie.
    - transport Supabase Realtime (broadcast + présence) pour le jeu en ligne ;
    - transport BroadcastChannel pour tester plusieurs onglets sur un même appareil. */
-import { createClient } from '@supabase/supabase-js';
 
 export const SUPABASE_URL = 'https://qduelziqulwtlrnhqmpk.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_t7_QVA_HGujJ365auHQHNg_pt5KGOOy';
 
 let sb = null;
+/* Le module réseau n'est chargé qu'au besoin : l'appli démarre plus vite */
+let sbModule = null;
+const loadSupabase = () => (sbModule ||= import('@supabase/supabase-js'));
+export function preloadNet() { loadSupabase().catch(() => null); }
 
 /* handlers : { onMessage(msg), onPeers(ids[]) } — renvoie { send(msg), close() } */
 export async function openRoom(code, me, handlers, transport = 'supabase') {
   if (transport === 'bc') return openBroadcastChannel(code, me, handlers);
-  if (!sb) sb = createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 20 } } });
+  if (!sb) { const { createClient } = await loadSupabase(); sb = createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 20 } } }); }
   const ch = sb.channel(`brumes-${code}`, { config: { broadcast: { self: false, ack: false }, presence: { key: me.id } } });
   ch.on('broadcast', { event: 'msg' }, ({ payload }) => handlers.onMessage(payload));
   ch.on('presence', { event: 'sync' }, () => handlers.onPeers(Object.keys(ch.presenceState())));

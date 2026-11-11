@@ -13,7 +13,7 @@ const info = { channel, version, date: now.toISOString(), sha: git('git rev-pars
 rmSync('dist', { recursive: true, force: true });
 mkdirSync('dist', { recursive: true });
 await build({
-  entryPoints: ['src/main.js'], bundle: true, format: 'esm', minify: true, target: 'es2020', outfile: 'dist/app.js', legalComments: 'none',
+  entryPoints: { app: 'src/main.js' }, bundle: true, format: 'esm', minify: true, target: 'es2020', outdir: 'dist', splitting: true, chunkNames: 'chunks/[name]-[hash]', legalComments: 'none',
   define: { __BRUMES_BUILD__: JSON.stringify(info) },
 });
 let html = readFileSync('index.html', 'utf8');

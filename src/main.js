@@ -1,8 +1,8 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, SIZES, generateIsland } from './engine.js';
-import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
-import { openRoom } from './net.js';
+import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers } from './view.js';
+import { openRoom, preloadNet } from './net.js';
 import { spriteSheet, icon } from './icons.js';
 
 document.body.insertAdjacentHTML('afterbegin', spriteSheet());
@@ -924,9 +924,11 @@ initView($('scene'));
 const homeIsland = createGame({ seats: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], seed: 20261107 });
 buildView(homeIsland);
 // Les numéros du plateau sont dessinés avec la police du jeu : on redessine l'île d'accueil quand elle est chargée
-document.fonts?.load('700 40px Fredoka').then(() => { if (!session) buildView(homeIsland); }).catch(() => null);
+document.fonts?.load('700 40px Fredoka').then(() => { refreshNumbers(); if (!session) buildView(homeIsland); }).catch(() => null);
 goHome();
 if (params.get('partie')) $('codeInput').focus();
+// Le module de jeu en ligne se charge en arrière-plan, une fois l'accueil affiché
+(window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => preloadNet());
 
 /* Accès pour les tests automatiques */
 window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads, setTurnTime, debugScene };
