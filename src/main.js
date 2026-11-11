@@ -401,6 +401,20 @@ function renderCosts() {
     (st.tide?.type === 'chantier-sentier' ? '<div class="note">Marée en cours : le sentier coûte moins cher.</div>' : '');
 }
 $('btnCosts').onclick = () => { costOpen = !costOpen; renderCosts(); };
+/* Toucher ailleurs sur l'écran ferme ce qui est ouvert (échange, construction, coûts, bulle, menu, règles) */
+document.addEventListener('pointerdown', e => {
+  const t = e.target, inside = sel => !!t.closest?.(sel);
+  let hud = false;
+  if (tradeOpen && !inside('#tradePanel, #btnBank, #hand')) { tradeOpen = false; hud = true; }
+  if (buildOpen && !inside('#buildPanel, #btnBuild')) { buildOpen = false; hud = true; }
+  if (costOpen && !inside('#costPanel, #btnCosts')) { costOpen = false; renderCosts(); }
+  if (!$('pieceTip').hidden && !inside('#pieceTip')) $('pieceTip').hidden = true;
+  if (hud && S()) refreshAll();
+}, true);
+for (const id of ['menuOverlay', 'rulesOverlay']) $(id).addEventListener('click', e => {
+  if (e.target !== e.currentTarget) return; // seulement le fond, pas la fenêtre elle-même
+  if (id === 'rulesOverlay' && !session) goHome(); else hideOverlays();
+});
 $('costPanel').onclick = () => { costOpen = false; renderCosts(); };
 let tipTimer = 0;
 function showTip(html, x, y, ms = 2600, wide = false) {
