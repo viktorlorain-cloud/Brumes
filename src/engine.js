@@ -4,11 +4,11 @@
 
 export const RES = ['bois', 'pierre', 'lin', 'grain', 'cristal'];
 export const RES_INFO = {
-  bois:    { nom: 'Bois',    ic: '🪵', terrain: 'Sylve',     col: '#4fbf66' },
-  pierre:  { nom: 'Pierre',  ic: '🪨', terrain: 'Carrière',  col: '#f58a5b' },
-  lin:     { nom: 'Lin',     ic: '🧵', terrain: 'Lande',     col: '#b4e36a' },
-  grain:   { nom: 'Grain',   ic: '🌾', terrain: 'Terrasses', col: '#f9cf4a' },
-  cristal: { nom: 'Cristal', ic: '💎', terrain: 'Pics',      col: '#a9b5d6' },
+  bois:    { nom: 'Bois',    ic: '🪵', terrain: 'Sylve',     col: '#3d7a46' },
+  pierre:  { nom: 'Pierre',  ic: '🪨', terrain: 'Carrière',  col: '#c0683c' },
+  lin:     { nom: 'Lin',     ic: '🧵', terrain: 'Lande',     col: '#98b957' },
+  grain:   { nom: 'Grain',   ic: '🌾', terrain: 'Terrasses', col: '#dfac45' },
+  cristal: { nom: 'Cristal', ic: '💎', terrain: 'Pics',      col: '#7c879e' },
 };
 /* Île standard (2-4 joueurs) : 19 tuiles. Grande île (5-6 joueurs) : 31 tuiles, coins rognés. */
 const TERRAIN_COUNTS = { bois: 4, pierre: 3, lin: 4, grain: 4, cristal: 3 };
@@ -19,9 +19,9 @@ export const PIPS = n => 6 - Math.abs(7 - n);
 const BASE_COSTS = { sentier: { bois: 1, pierre: 1 }, camp: { bois: 1, pierre: 1, lin: 1, grain: 1 }, bastion: { grain: 2, cristal: 3 } };
 export const LIMITS = { sentier: 15, camp: 5, bastion: 4 };
 export const PLAYER_DEFS = [
-  { nom: 'Corail', col: '#ff4d4d' }, { nom: 'Lagon', col: '#12b5a6' },
-  { nom: 'Ambre', col: '#ff9f1c' }, { nom: 'Indigo', col: '#7b5cff' },
-  { nom: 'Azur', col: '#2f8fff' }, { nom: 'Rose', col: '#ff5fa8' },
+  { nom: 'Corail', col: '#ef5b4c' }, { nom: 'Lagon', col: '#22b3a4' },
+  { nom: 'Ambre', col: '#f2a920' }, { nom: 'Indigo', col: '#8a6dff' },
+  { nom: 'Azur', col: '#3f9cff' }, { nom: 'Rose', col: '#f262a6' },
 ];
 export const MAX_PLAYERS = 6;
 export const SIZE = 1;

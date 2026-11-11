@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
@@ -67,19 +67,32 @@ const canQuickBuild = () => { const st = S(); return !!st && session.mode === 'o
 
 /* ---------- Affichage du HUD ---------- */
 let handSnap = null; // dernière main affichée : pour faire tomber les gains
+/* Fiche d'un joueur, organisée comme dans les jeux du genre : points + nom, puis cartes, Fortune et pièces restantes */
 function plateHTML(st, q, me, online) {
   const away = online && q.clientId && session.peers && !session.peers.has(q.clientId);
-  const initial = esc((q.nom || '?').trim().charAt(0).toUpperCase());
-  return `<div class="plate ${q.id === st.current && st.phase !== 'over' ? 'active' : ''} ${away ? 'away' : ''} ${online && q.id === me ? 'me' : ''}" data-pid="${q.id}">
-    <span class="avatar"><span class="face" style="background:${q.col}">${initial}</span>
-      <svg class="ring" viewBox="0 0 38 38"><circle class="track" cx="19" cy="19" r="17"/><circle class="left" cx="19" cy="19" r="17" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg></span>
-    <span class="who"><b>${esc(q.nom)}</b><span class="stats"><span title="Points de victoire">${icon('fortune')}${vp(q)}</span><span title="Cartes en main">${icon('carte')}${total(q)}</span></span></span></div>`;
+  const active = q.id === st.current && st.phase !== 'over';
+  const mine = online ? q.id === me : false;
+  const pieces = k => LIMITS[k] - (q.built?.[k] || 0);
+  return `<div class="pc ${active ? 'active' : ''} ${away ? 'away' : ''} ${mine ? 'me' : ''}" data-pid="${q.id}" style="--c:${q.col}">
+    <div class="pc-head"><span class="vp" title="Points de victoire">${vp(q)}</span><b>${esc(q.nom)}</b></div>
+    <div class="pc-row"><span title="Cartes en main">${icon('carte')}${total(q)}</span><span title="Jetons de Fortune">${icon('fortune')}${q.fortune}</span></div>
+    <div class="pc-row pieces"><span title="Sentiers restants">${icon('sentier')}${pieces('sentier')}</span><span title="Camps restants">${icon('camp')}${pieces('camp')}</span><span title="Bastions restants">${icon('bastion')}${pieces('bastion')}</span></div>
+    ${active ? '<div class="call"><span class="step"></span><b class="clock" hidden></b></div>' : ''}</div>`;
+}
+/* Étape en cours du joueur actif, affichée dans sa bulle */
+function stepLabel(st) {
+  if (st.phase === 'setup') return st.setupSub === 'camp' ? 'Pose un camp' : 'Trace un sentier';
+  if (st.phase === 'roll') return 'Lance les dés';
+  if (st.phase === 'robber') return 'Déplace le Rôdeur';
+  if (st.offer) return 'Propose un échange';
+  return 'Construit';
 }
 function renderHUD() {
   const st = S(); if (!st) return;
   const me = myPid(), mine = me >= 0 ? st.players[me] : null;
   const online = session.mode === 'online';
-  $('players').classList.toggle('three', st.players.length > 4);
+  $('players').classList.toggle('six', st.players.length > 4);
+  $('players').style.setProperty('--n', st.players.length);
   $('players').innerHTML = st.players.map(q => plateHTML(st, q, me, online)).join('');
   // Marée : visible seulement quand elle agit ou qu'elle est annoncée
   const chip = $('tideChip');
@@ -104,8 +117,9 @@ function renderHUD() {
   $('btnEnd').disabled = !(mt && st.phase === 'main');
   $('btnSentier').querySelector('.co').innerHTML = st.tide?.type === 'chantier-sentier' ? icon('bois') : icon('bois') + icon('pierre');
   for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).classList.toggle('on', uiMode === m);
-  $('toasts').style.top = `${Math.round($('top').getBoundingClientRect().bottom + 8)}px`;
   renderOffer(); renderTimer();
+  const call = document.querySelector('.pc.active .call');
+  $('toasts').style.top = `${Math.round(Math.max($('top').getBoundingClientRect().bottom, call ? call.getBoundingClientRect().bottom : 0) + 8)}px`;
 }
 /* Les cartes gagnées tombent dans la main, avec leur « +N » */
 function dropGains() {
@@ -164,6 +178,7 @@ function refreshAll() { renderHUD(); refreshInteraction(); }
 /* ---------- Réception d'un nouvel état ---------- */
 function onNewState(state, events, sequential) {
   session.state = state;
+  document.body.classList.remove('home');
   syncTimer(state);
   if (session.mode === 'online') store.set(KEY + 'last', { code: session.code, state });
   else store.set(KEY + 'local', state);
@@ -216,18 +231,17 @@ function syncTimer(st) {
     deadline = Date.now() + (st.timerLeftMs ?? st.turnTime * 1000);
   }
 }
-/* Médaillon rond (en bas à droite) + anneau autour de l'avatar du joueur actif */
+/* Bulle sous la fiche du joueur actif : étape en cours et temps restant */
 function renderTimer() {
-  const st = S(), el = $('timer');
-  const plate = document.querySelector('.plate.active');
-  if (!st || !st.turnTime || !deadline || st.phase === 'over') { el.hidden = true; return; }
-  const left = Math.max(0, deadline - Date.now()), frac = Math.min(1, left / (st.turnTime * 1000)), low = left <= 10000;
-  el.hidden = false; el.classList.toggle('low', low);
-  el.querySelector('.left').setAttribute('stroke-dashoffset', (100 * (1 - frac)).toFixed(2));
-  const sec = Math.ceil(left / 1000);
-  $('timerNum').textContent = sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : String(sec);
-  $('timerWho').textContent = isMyTurn() ? 'à vous' : st.players[st.current].nom;
-  if (plate) { plate.classList.toggle('low', low); plate.querySelector('.ring .left').setAttribute('stroke-dashoffset', (100 * (1 - frac)).toFixed(2)); }
+  const st = S(), call = document.querySelector('.pc.active .call');
+  if (!st || !call) return null;
+  call.querySelector('.step').textContent = stepLabel(st);
+  const clock = call.querySelector('.clock');
+  if (!st.turnTime || !deadline || st.phase === 'over') { clock.hidden = true; call.classList.remove('low'); return null; }
+  const left = Math.max(0, deadline - Date.now()), sec = Math.ceil(left / 1000);
+  clock.hidden = false;
+  clock.textContent = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+  call.classList.toggle('low', left <= 10000);
   return left;
 }
 function autoPlay(st) {
@@ -247,7 +261,7 @@ function autoPlay(st) {
   if (a) { if (uiMode && pid === myPid()) uiMode = null; hostApply(pid, a); }
 }
 function tickTimer() {
-  const st = S(); if (!st) { $('timer').hidden = true; return; }
+  const st = S(); if (!st) return;
   const left = renderTimer();
   if (left == null) return;
   if (left <= 10000 && left > 0 && !warned && isMyTurn()) { warned = true; toast('Plus que 10 secondes'); try { navigator.vibrate?.([60, 80, 60]); } catch { /* indisponible */ } }
@@ -428,7 +442,7 @@ function leave() {
   session = null; uiMode = null; waiting = false;
   clearMarkers(); hint('');
 }
-function goHome() { renderHome(); showOverlay('homeOverlay'); }
+function goHome() { document.body.classList.add('home'); renderHome(); showOverlay('homeOverlay'); }
 
 async function connect(code, isHost, fallbackState = null) {
   session = { mode: 'online', code, isHost, lobby: null, state: null, peers: new Set([ME.id]), room: null };
@@ -451,7 +465,8 @@ async function createOnline() {
   const code = newCode();
   showOverlay('lobbyOverlay');
   if (!await connect(code, true)) return;
-  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], win: winPts, turnTime: timePref };
+  const m = MODES[modeId];
+  session.lobby = { code, hostId: ME.id, seats: [{ clientId: ME.id, name: ME.name }], mode: m.id, win: m.win, min: m.min, max: m.max, turnTime: timePref };
   renderLobby(); broadcastLobby();
 }
 async function joinOnline(code, resumeState = null) {
@@ -478,18 +493,20 @@ function broadcastLobby() { if (session?.isHost && session.lobby) session.room.s
 
 function renderLobby() {
   const l = session.lobby; if (!l) return;
+  const cap = l.max || MAX_PLAYERS, min = l.min || 2;
   $('lobbyCode').textContent = l.code;
+  $('lobbyMode').textContent = `${MODES[l.mode]?.nom || 'Partie'} · code à partager`;
   $('lobbySeats').innerHTML = l.seats.map((s, i) => `<li><span class="dot" style="background:${PLAYER_DEFS[i].col}"></span><b>${esc(s.name)}</b>${s.clientId === l.hostId ? '<small>hôte</small>' : ''}${s.clientId === ME.id ? '<small>vous</small>' : ''}${session.peers.has(s.clientId) ? '' : '<small class="off">hors ligne</small>'}</li>`).join('') +
-    Array.from({ length: MAX_PLAYERS - l.seats.length }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
+    Array.from({ length: Math.max(0, cap - l.seats.length) }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
-  $('btnLaunch').disabled = l.seats.length < 2;
-  $('lobbyStatus').textContent = host ? (l.seats.length < 2 ? 'Envoyez le code à vos amis pour qu’ils vous rejoignent.' : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île, avec construction pendant le tour des autres' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
+  $('btnLaunch').disabled = l.seats.length < min;
+  $('lobbyStatus').textContent = host ? (l.seats.length < min ? `Envoyez le code à vos amis : il faut au moins ${min} joueurs.` : `Prêt : ${l.seats.length} joueurs, ${l.win} points pour gagner${l.seats.length > 4 ? ', sur la grande île, avec construction pendant le tour des autres' : ''}, temps par tour : ${TIME_LABEL(l.turnTime || 0)}.`) : "En attente que l'hôte lance la partie…";
 }
 $('btnInvite').onclick = () => session && shareInvite(session.code);
 $('btnLobbyLeave').onclick = () => { leave(); goHome(); };
 $('btnLaunch').onclick = () => {
-  const l = session.lobby; if (!session.isHost || l.seats.length < 2) return;
+  const l = session.lobby; if (!session.isHost || l.seats.length < (l.min || 2)) return;
   const st = createGame({ seats: l.seats, win: l.win, code: l.code, hostId: ME.id, quickBuild: l.seats.length > 4, turnTime: l.turnTime || 0 });
   session.lobby = null; session.state = st; st.seq = 1;
   deadline = 0; timerKey = null; syncTimer(st);
@@ -506,8 +523,8 @@ function onMessage(m) {
     const l = session.lobby; if (!l) return;
     const seat = l.seats.find(s => s.clientId === m.from);
     if (seat) seat.name = m.name || seat.name;
-    else if (l.seats.length < MAX_PLAYERS) l.seats.push({ clientId: m.from, name: m.name || PLAYER_DEFS[l.seats.length].nom });
-    else { session.room.send({ type: 'error', to: m.from, msg: `La partie est complète (${MAX_PLAYERS} joueurs).` }); return; }
+    else if (l.seats.length < (l.max || MAX_PLAYERS)) l.seats.push({ clientId: m.from, name: m.name || PLAYER_DEFS[l.seats.length].nom });
+    else { session.room.send({ type: 'error', to: m.from, msg: `La partie est complète (${l.max || MAX_PLAYERS} joueurs).` }); return; }
     renderLobby(); broadcastLobby();
     return;
   }
@@ -560,37 +577,74 @@ function startLocal(n) {
   leave();
   const seats = PLAYER_DEFS.slice(0, n).map(d => ({ name: d.nom }));
   deadline = 0; timerKey = null;
-  session = { mode: 'local', state: createGame({ seats, win: winPts, turnTime: timePref }) };
+  session = { mode: 'local', state: createGame({ seats, win: MODES[modeId].win, turnTime: timePref }) };
   hideOverlays(); resetCamera(); onNewState(session.state, [], false);
   toast('La brume cache les terrains. Les numéros restent visibles.', 3600);
 }
 
 /* ---------- Écran d'accueil ---------- */
-let winPts = 10, localN = 3, timePref = store.get(KEY + 'turnTime', 90);
+/* Modes de jeu : ils fixent les points de victoire et le nombre de places */
+const MODES = {
+  duel:       { id: 'duel',       nom: 'Duel',       min: 2, max: 2, win: 10, min_: 20, ico: 'bastion', tag: '' },
+  escale:     { id: 'escale',     nom: 'Escale',     min: 2, max: 4, win: 7,  min_: 15, ico: 'sablier', tag: 'Rapide' },
+  expedition: { id: 'expedition', nom: 'Expédition', min: 3, max: 4, win: 10, min_: 30, ico: 'camp',    tag: '' },
+  grande:     { id: 'grande',     nom: 'Grande île', min: 5, max: 6, win: 10, min_: 40, ico: 'phare',   tag: '' },
+};
+let homeTab = store.get(KEY + 'tab', 'online'), modeId = store.get(KEY + 'mode', 'expedition'), localN = 0, timePref = store.get(KEY + 'turnTime', 90);
+if (!MODES[modeId]) modeId = 'expedition';
 function requireName() {
   const n = $('nameInput').value.trim().slice(0, 12);
   if (!n) { toast('Choisissez un nom pour que vos amis vous reconnaissent'); $('nameInput').focus(); return false; }
   ME.name = n; store.set(KEY + 'name', n); return true;
 }
+function renderAvatar() { $('meAvatar').textContent = ($('nameInput').value.trim().charAt(0) || '?').toUpperCase(); }
+function renderModes() {
+  const m = MODES[modeId];
+  $('modes').innerHTML = Object.values(MODES).map(x => `<button type="button" class="mode ${x.id === modeId ? 'sel' : ''}" data-m="${x.id}">
+    <span class="pic">${icon(x.ico)}</span>
+    <span><b>${x.nom}${x.tag ? `<span class="tag">${x.tag}</span>` : ''}</b>
+      <span class="meta"><span>${icon('carte')}${x.min === x.max ? x.min : `${x.min}-${x.max}`} joueurs</span><span>${icon('fortune')}${x.win} pts</span><span>${icon('sablier')}~${x.min_} min</span></span></span></button>`).join('');
+  $('modes').querySelectorAll('.mode').forEach(b => b.onclick = () => { modeId = b.dataset.m; store.set(KEY + 'mode', modeId); localN = 0; renderModes(); });
+  // Sur ce téléphone : nombre de joueurs dans la plage du mode
+  const local = homeTab === 'local';
+  if (!localN || localN < m.min || localN > m.max) localN = Math.min(m.max, Math.max(m.min, 3));
+  $('localCountField').hidden = !local || m.min === m.max;
+  $('segLocal').innerHTML = Array.from({ length: m.max - m.min + 1 }, (_, i) => m.min + i).map(n => `<button type="button" data-v="${n}" class="${n === localN ? 'sel' : ''}">${n}</button>`).join('');
+  $('segLocal').querySelectorAll('button').forEach(b => b.onclick = () => { localN = +b.dataset.v; renderModes(); });
+  $('joinField').hidden = local;
+  $('btnStart').textContent = local ? 'Démarrer la partie' : 'Créer la partie';
+  $('tabOnline').classList.toggle('sel', !local); $('tabLocal').classList.toggle('sel', local);
+  // Reprise de la partie en cours, selon l'onglet
+  const last = store.get(KEY + 'last'), saved = store.get(KEY + 'local');
+  const canResume = local ? !!(saved && saved.phase !== 'over') : !!(last && last.state && last.state.phase !== 'over' && last.state.players.some(p => p.clientId === ME.id));
+  $('btnResume').hidden = !canResume;
+  $('btnResume').textContent = local ? 'Reprendre la partie sur ce téléphone' : canResume ? `Reprendre la partie ${last.code}` : '';
+}
 function renderHome() {
   $('nameInput').value = ME.name || '';
-  const last = store.get(KEY + 'last'), local = store.get(KEY + 'local');
-  const canResume = last && last.state && last.state.phase !== 'over' && last.state.players.some(p => p.clientId === ME.id);
-  $('btnResume').style.display = canResume ? '' : 'none';
-  if (canResume) $('btnResume').textContent = `Reprendre la partie ${last.code}`;
-  $('btnResumeLocal').style.display = local && local.phase !== 'over' ? '' : 'none';
-  if (params.get('partie')) $('codeInput').value = params.get('partie').toUpperCase().slice(0, 4);
+  renderAvatar(); renderModes();
+  if (params.get('partie')) { homeTab = 'online'; renderModes(); $('codeInput').value = params.get('partie').toUpperCase().slice(0, 4); }
 }
-$('segTime').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.v === timePref));
-for (const [seg, set] of [['segWin', v => winPts = v], ['segLocal', v => localN = v], ['segTime', v => { timePref = v; store.set(KEY + 'turnTime', v); }]]) {
-  $(seg).querySelectorAll('button').forEach(b => b.onclick = () => { $(seg).querySelectorAll('button').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); set(+b.dataset.v); });
-}
-$('btnCreate').onclick = createOnline;
+$('nameInput').addEventListener('input', renderAvatar);
+$('nameInput').addEventListener('change', () => { const n = $('nameInput').value.trim().slice(0, 12); if (n) { ME.name = n; store.set(KEY + 'name', n); } });
+$('tabOnline').onclick = () => { homeTab = 'online'; store.set(KEY + 'tab', homeTab); renderModes(); };
+$('tabLocal').onclick = () => { homeTab = 'local'; store.set(KEY + 'tab', homeTab); renderModes(); };
+$('segTime').querySelectorAll('button').forEach(b => {
+  b.classList.toggle('sel', +b.dataset.v === timePref);
+  b.onclick = () => { $('segTime').querySelectorAll('button').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); timePref = +b.dataset.v; store.set(KEY + 'turnTime', timePref); };
+});
+$('btnStart').onclick = () => {
+  if (homeTab === 'local') { const n = $('nameInput').value.trim(); if (n) { ME.name = n.slice(0, 12); store.set(KEY + 'name', ME.name); } startLocal(MODES[modeId].min === MODES[modeId].max ? MODES[modeId].min : localN); }
+  else createOnline();
+};
 $('btnJoin').onclick = () => joinOnline($('codeInput').value);
 $('codeInput').addEventListener('keydown', e => { if (e.key === 'Enter') joinOnline($('codeInput').value); });
-$('btnLocal').onclick = () => startLocal(localN);
-$('btnResume').onclick = () => { const last = store.get(KEY + 'last'); if (!requireName()) return; joinOnline(last.code, last.state); };
-$('btnResumeLocal').onclick = () => { leave(); deadline = 0; timerKey = null; session = { mode: 'local', state: store.get(KEY + 'local') }; hideOverlays(); resetCamera(); onNewState(session.state, [], false); };
+$('btnResume').onclick = () => {
+  if (homeTab === 'local') { leave(); deadline = 0; timerKey = null; session = { mode: 'local', state: store.get(KEY + 'local') }; hideOverlays(); resetCamera(); onNewState(session.state, [], false); return; }
+  const last = store.get(KEY + 'last'); if (!requireName()) return; joinOnline(last.code, last.state);
+};
+$('navRules').onclick = () => showOverlay('rulesOverlay');
+$('btnRulesClose').onclick = () => session ? hideOverlays() : goHome();
 
 /* Installation sur l'écran d'accueil */
 let installEvt = null;

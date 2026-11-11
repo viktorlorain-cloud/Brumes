@@ -1,7 +1,7 @@
 /* Jeu d'icônes de Brumes : une seule source pour l'interface (SVG) et le plateau 3D (textures).
    Style : formes rondes, aplats francs, contour bleu nuit de 3 px sur une grille de 48. */
 const O = '#1d2b4f';
-const g = inner => `<g stroke="${O}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">${inner}</g>`;
+const g = inner => `<g stroke="${O}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">${inner}</g>`;
 
 export const ICONS = {
   bois: g(`<rect x="5" y="14" width="34" height="20" rx="10" fill="#c9823f"/><path d="M11 21h13M9 28h10" fill="none"/>
