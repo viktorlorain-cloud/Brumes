@@ -36,8 +36,7 @@ const pick = arr => arr[Math.floor(rand() * arr.length)];
 function buildTideDeck() {
   const d = [];
   for (const r of RES) d.push({ type: 'abondance', res: r }, { type: 'disette', res: r }, { type: 'haut', res: r }, { type: 'bas', res: r });
-  d.push({ type: 'chantier-sentier', res: 'pierre' }, { type: 'chantier-carnet', res: 'cristal' });
-  for (let i = 0; i < 10; i++) d.push({ type: 'calme', res: null });
+  d.push({ type: 'chantier-sentier', res: 'pierre' });
   return shuffle(d);
 }
 export function tideTitle(t) {
@@ -59,14 +58,19 @@ export function tideDesc(t) {
     calme: 'Aucun effet. Le Phare échange à 3 contre 1.',
   })[t.type] + (t.res && t.type !== 'chantier-carnet' ? ` Phare : ${r.nom} à 2 contre 1.` : '');
 }
-function drawTide(S, prevRes) {
-  for (let guard = 0; guard < 40; guard++) {
-    if (!S.tideDeck.length) S.tideDeck = buildTideDeck();
-    const c = S.tideDeck.pop();
-    if (c.res && c.res === prevRes && c.type !== 'calme') { S.tideDeck.unshift(c); continue; }
-    return c;
+/* Les marées sont rares : 2 ou 3 par partie, à des tours tirés au sort (dès le tour 3,
+   au moins 3 tours d'écart), chacune annoncée un tour à l'avance et sur des ressources différentes. */
+function planTides() {
+  const deck = buildTideDeck(), plan = [], used = new Set();
+  const count = rand() < 0.5 ? 2 : 3;
+  let round = 3 + Math.floor(rand() * 2);
+  for (let i = 0; i < count; i++) {
+    let c = deck.pop(); while (c && used.has(c.res)) c = deck.pop();
+    if (!c) break;
+    used.add(c.res); plan.push({ round, card: c });
+    round += 3 + Math.floor(rand() * 3);
   }
-  return { type: 'calme', res: null };
+  return plan;
 }
 
 /* ---------- Génération de l'île ---------- */
@@ -95,16 +99,38 @@ export function generateIsland(seed, big = false) {
   }
   center.terrain = 'phare';
 
+  /* Numéros : règles strictes (pas de 6/8 voisins, pas de doublons voisins), puis on garde
+     le tirage le mieux réparti : aucune intersection trop riche, les numéros rouges sur des
+     ressources différentes, et des chances proches pour chaque ressource. */
   const nums = (big ? NUMBERS_BIG : NUMBERS).slice();
-  for (let a = 0; a < 20000; a++) {
+  const corners = []; // les 3 tuiles autour de chaque intersection intérieure
+  for (const t of land) for (let i = 0; i < 6; i++) {
+    const a = t.neighbors.find(n => tiles[n].q === t.q + NEIGH[i][0] && tiles[n].r === t.r + NEIGH[i][1]);
+    const b = t.neighbors.find(n => tiles[n].q === t.q + NEIGH[(i + 1) % 6][0] && tiles[n].r === t.r + NEIGH[(i + 1) % 6][1]);
+    if (a != null && b != null) corners.push([t, tiles[a], tiles[b]]);
+  }
+  const avg = nums.reduce((s, n) => s + PIPS(n), 0) / land.length;
+  let best = null, bestScore = Infinity;
+  for (let a = 0; a < 30000 && bestScore > 0; a++) {
     shuffle(nums); land.forEach((t, i) => t.number = nums[i]);
-    const ok = land.every(t => t.neighbors.every(n => {
+    const strict = land.every(t => t.neighbors.every(n => {
       const o = tiles[n]; if (o.number == null) return true;
       if (o.number === t.number) return false;
       return !((t.number === 6 || t.number === 8) && (o.number === 6 || o.number === 8));
     }));
-    if (ok) break;
+    if (!strict) continue;
+    let score = 0;
+    for (const c of corners) { const pips = c.reduce((s, t) => s + (t.number ? PIPS(t.number) : 0), 0); if (pips > 12) score += pips - 12; }
+    for (const r of RES) {
+      const own = land.filter(t => t.terrain === r);
+      const reds = own.filter(t => t.number === 6 || t.number === 8).length;
+      if (reds > (big ? 2 : 1)) score += 3 * (reds - (big ? 2 : 1));
+      const mean = own.reduce((s, t) => s + PIPS(t.number), 0) / own.length;
+      score += Math.max(0, Math.abs(mean - avg) - 0.6) * 2;
+    }
+    if (score < bestScore) { bestScore = score; best = land.map(t => t.number); }
   }
+  if (best) land.forEach((t, i) => t.number = best[i]);
 
   const vertices = [], edges = [], vKey = new Map(), eKey = new Map();
   for (const t of tiles) {
@@ -157,10 +183,10 @@ export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 
     current: 0, phase: 'setup', round: 0,
     setupOrder: [...Array(n).keys(), ...[...Array(n).keys()].reverse()],
     setupStep: 0, setupSub: 'camp', lastCamp: null,
-    robber: isl.center, tideDeck: [], tide: null, nextTide: null, dice: null, winner: null,
+    robber: isl.center, tidePlan: [], tide: null, nextTide: null, dice: null, winner: null, offer: null,
   };
   rand = Math.random;
-  S.tideDeck = buildTideDeck();
+  S.tidePlan = planTides();
   S.current = S.setupOrder[0];
   return S;
 }
@@ -222,10 +248,10 @@ function give(S, p, r, n) { const k = Math.min(n, S.bank[r]); p.res[r] += k; S.b
 function reveal(S, ids) { const out = []; for (const id of ids) { const t = S.tiles[id]; if (!t.revealed) { t.revealed = true; out.push(id); } } return out; }
 function startRound(S) {
   S.round++;
-  const prev = S.tide?.res || null;
-  S.tide = S.nextTide || drawTide(S, prev);
-  S.nextTide = drawTide(S, S.tide.res);
+  S.tide = S.tidePlan.find(p => p.round === S.round)?.card || null;
+  S.nextTide = S.tidePlan.find(p => p.round === S.round + 1)?.card || null;
 }
+export const tidesLeft = S => S.tidePlan.filter(p => p.round > S.round).length;
 function produce(S, n) {
   const gains = [];
   const demand = Object.fromEntries(RES.map(r => [r, new Map()]));
@@ -256,6 +282,20 @@ function checkWin(S, p, ev) {
   if (p.id === S.current && vp(p) >= S.win) { S.phase = 'over'; S.winner = p.id; ev.push({ k: 'win', pid: p.id }); }
 }
 
+/* ---------- Échanges entre joueurs ---------- */
+function cleanBundle(b) { const o = {}; for (const r of RES) { const n = Math.floor(Number(b?.[r]) || 0); if (n > 0) o[r] = Math.min(n, 19); } return o; }
+export const bundleText = b => Object.entries(b).map(([r, n]) => `${n} ${RES_INFO[r].ic}`).join(' + ');
+function respondOffer(S, pid, a, ev, fail) {
+  const o = S.offer;
+  if (!o || o.id !== a.id) return fail("Cette proposition n'existe plus.");
+  if (pid === o.from) return fail('Vous ne pouvez pas répondre à votre propre proposition.');
+  if (a.accept && !canPay(S.players[pid], o.want)) return fail("Vous n'avez pas les cartes demandées.");
+  o.responses[pid] = a.accept ? 'accept' : 'decline';
+  ev.push({ k: 'offer' });
+  if (a.accept) ev.push({ k: 'toast', msg: `${S.players[pid].nom} accepte l'échange` });
+  return { ok: true, events: ev };
+}
+
 /* ---------- Actions ----------
    applyAction(S, pid, action) modifie S et renvoie { ok, error, events }.
    action : {t:'camp',v} {t:'road',e} {t:'bastion',v} {t:'roll'} {t:'robber',tile} {t:'trade',give,get} {t:'end'} */
@@ -267,6 +307,7 @@ export function applyAction(S, pid, a) {
   const p = S.players[pid];
   if (!p) return fail('Joueur inconnu.');
   const outOfTurn = pid !== S.current;
+  if (a.t === 'respond') return respondOffer(S, pid, a, ev, fail);
   if (outOfTurn && !(['road', 'camp', 'bastion'].includes(a.t) && canBuildOutOfTurn(S, pid)))
     return fail(S.quickBuild && ['road', 'camp', 'bastion'].includes(a.t) ? 'Vous pourrez construire quand le joueur actif aura lancé les dés.' : "Ce n'est pas votre tour.");
 
@@ -292,7 +333,7 @@ export function applyAction(S, pid, a) {
       S.setupStep++; S.setupSub = 'camp'; S.lastCamp = S.setupStep >= S.setupOrder.length ? null : S.lastCamp;
       if (S.setupStep >= S.setupOrder.length) {
         S.phase = 'roll'; S.current = 0; startRound(S);
-        ev.push({ k: 'toast', msg: `Marée : ${tideTitle(S.tide)}. ${tideDesc(S.tide)}`, ms: 4200, delay: 900 });
+        ev.push({ k: 'toast', msg: `Que l'expédition commence ! ${S.tidePlan.length} marées vont bouleverser l'île pendant la partie.`, ms: 4200, delay: 900 });
       } else S.current = S.setupOrder[S.setupStep];
       return { ok: true, events: ev };
     }
@@ -371,10 +412,38 @@ export function applyAction(S, pid, a) {
     ev.push({ k: 'bump', pid, res: [a.get] });
     return { ok: true, events: ev };
   }
+  if (a.t === 'offer') {
+    const give = cleanBundle(a.give), want = cleanBundle(a.want);
+    if (!Object.keys(give).length || !Object.keys(want).length) return fail('Choisissez ce que vous donnez et ce que vous voulez.');
+    if (Object.keys(give).some(r => want[r])) return fail('On ne peut pas échanger une ressource contre la même.');
+    if (!canPay(p, give)) return fail("Vous n'avez pas ces cartes.");
+    S.offer = { id: `${S.round}-${S.current}-${Date.now().toString(36)}`, from: pid, give, want, responses: {} };
+    ev.push({ k: 'offer' });
+    return { ok: true, events: ev };
+  }
+  if (a.t === 'cancelOffer') { S.offer = null; ev.push({ k: 'offer' }); return { ok: true, events: ev }; }
+  if (a.t === 'confirmOffer') {
+    const o = S.offer;
+    if (!o || o.id !== a.id) return fail("Cette proposition n'existe plus.");
+    const q = S.players[a.with];
+    if (!q || o.responses[a.with] !== 'accept') return fail("Ce joueur n'a pas accepté.");
+    if (!canPay(p, o.give)) return fail("Vous n'avez plus ces cartes.");
+    if (!canPay(q, o.want)) return fail(`${q.nom} n'a plus ces cartes.`);
+    for (const [r, n] of Object.entries(o.give)) { p.res[r] -= n; q.res[r] += n; }
+    for (const [r, n] of Object.entries(o.want)) { q.res[r] -= n; p.res[r] += n; }
+    S.offer = null;
+    ev.push({ k: 'offer' }, { k: 'toast', msg: `${p.nom} échange ${bundleText(o.give)} contre ${bundleText(o.want)} avec ${q.nom}` });
+    return { ok: true, events: ev };
+  }
   if (a.t === 'end') {
     S.current = (S.current + 1) % S.players.length;
     S.dice = null;
-    if (S.current === 0) { startRound(S); ev.push({ k: 'toast', msg: `Nouvelle marée : ${tideTitle(S.tide)}. ${tideDesc(S.tide)}`, ms: 4200 }); }
+    if (S.current === 0) {
+      startRound(S);
+      if (S.tide) ev.push({ k: 'tide', tide: S.tide }, { k: 'toast', msg: `Marée : ${tideTitle(S.tide)}. ${tideDesc(S.tide)}`, ms: 5000 });
+      else if (S.nextTide) ev.push({ k: 'toast', msg: `Une marée arrive au prochain tour : ${tideTitle(S.nextTide)}`, ms: 4200 });
+    }
+    S.offer = null;
     S.phase = 'roll';
     ev.push({ k: 'turn', pid: S.current });
     checkWin(S, S.players[S.current], ev);

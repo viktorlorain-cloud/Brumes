@@ -52,48 +52,54 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .bar { pointer-events: auto; background: var(--paper); border: var(--line); border-radius: var(--r); box-shadow: var(--drop); }
 #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(8px + var(--safe-top)) 10px 0; display: grid; gap: 9px; pointer-events: none; }
 
-/* Joueurs */
-#players { display: flex; gap: 5px; padding: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; }
-.pchip { display: flex; align-items: center; gap: 5px; padding: 4px 7px 4px 5px; border-radius: 12px; font-size: 13px; white-space: nowrap; border: 2.5px solid transparent; font-variant-numeric: tabular-nums; min-width: 0; }
-.pchip.active { background: var(--sun); border-color: var(--ink); box-shadow: 0 2px 0 var(--ink); }
-.pchip.away { opacity: 0.45; }
-.dot { width: 16px; height: 16px; border-radius: 50%; flex: none; background: #d9dfee; border: 2.5px solid var(--ink); }
-.pchip b { font-family: var(--display); font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
-.pchip .pts { font-family: var(--display); font-weight: 700; font-size: 12px; min-width: 22px; height: 22px; padding: 0 5px; display: grid; place-items: center; border-radius: 11px; background: var(--ink); color: #fff; }
-.pchip .cards { font-family: var(--display); font-weight: 600; font-size: 11px; min-width: 16px; height: 21px; padding: 0 3px; display: grid; place-items: center; border-radius: 4px; background: #fff; border: 2px solid var(--ink); color: var(--ink); }
-.menuBtn { margin-left: auto; flex: none; border: 2.5px solid var(--ink); background: #fff; border-radius: 12px; width: 40px; height: 34px; padding: 0; display: grid; place-items: center; box-shadow: 0 2px 0 var(--ink); }
+/* Joueurs : une fiche par joueur (avatar, points, cartes), comme une table de jeu */
+#players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 6px; margin-right: 52px; }
+#players.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.plate { display: flex; align-items: center; gap: 7px; padding: 4px 8px 4px 4px; border-radius: 14px; border: 2.5px solid transparent; min-width: 0; }
+.plate.active { background: var(--sun); border-color: var(--ink); box-shadow: 0 2px 0 var(--ink); }
+.plate.away { opacity: 0.45; }
+.avatar { position: relative; width: 38px; height: 38px; flex: none; }
+.avatar .face { position: absolute; inset: 4px; border-radius: 50%; border: 2.5px solid var(--ink); display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 15px; color: #fff; text-shadow: 0 1.5px 0 var(--ink); }
+.avatar .ring { position: absolute; inset: 0; transform: rotate(-90deg); }
+.avatar .ring circle { fill: none; stroke-width: 4; stroke-linecap: round; }
+.avatar .ring .track { stroke: rgba(29, 43, 79, 0.15); }
+.avatar .ring .left { stroke: var(--ink); transition: stroke-dashoffset 0.25s linear; }
+.plate.low .avatar .ring .left { stroke: var(--coral); }
+.plate .who { display: grid; min-width: 0; gap: 2px; }
+.plate b { font-family: var(--display); font-weight: 600; font-size: 14px; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plate.me b::after { content: " · vous"; font-family: var(--body); font-size: 11px; color: var(--ink-soft); }
+#players.three .plate.me b::after { content: ""; }
+.stats { display: flex; gap: 6px; font-family: var(--display); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.stats span { display: flex; align-items: center; gap: 2px; }
+.stats .ico { width: 16px; height: 16px; }
+.menuBtn { position: fixed; top: calc(14px + var(--safe-top)); right: 10px; z-index: 5; pointer-events: auto; border: var(--line); background: #fff; border-radius: 50%; width: 46px; height: 46px; padding: 0; display: grid; place-items: center; box-shadow: var(--drop); }
 .menuBtn .ico { width: 24px; height: 24px; }
-#players.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 3px 5px; }
-#players.grid2 .menuBtn { grid-column: 3; grid-row: 1 / span 2; height: auto; align-self: stretch; }
-#players.grid2 .pchip b { flex: 1; }
-#players.compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 3px; }
-#players.compact .menuBtn { grid-column: 4; grid-row: 1 / span 2; height: auto; align-self: stretch; }
-#players.compact .pchip { padding: 3px 4px; gap: 3px; }
-#players.compact .pchip b { font-size: 12px; flex: 1; }
-#players.compact .pchip .cards { display: none; }
-#players.compact .pchip.me b { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
 
-/* Minuteur */
-#timer { position: relative; height: 28px; overflow: hidden; display: flex; align-items: center; justify-content: center; gap: 5px; background: #fff; }
+/* Marée : une étiquette qui n'apparaît que lorsqu'une marée arrive ou agit */
+#tideChip { justify-self: center; pointer-events: auto; display: flex; align-items: center; gap: 7px; padding: 5px 13px 5px 6px; border-radius: 999px; border: var(--line); box-shadow: var(--drop); background: #d6f6ff; font-family: var(--display); font-weight: 600; font-size: 14px; }
+#tideChip[hidden] { display: none; }
+#tideChip .wave { width: 26px; height: 26px; border-radius: 50%; background: var(--sky); border: 2.5px solid var(--ink); display: grid; place-items: center; color: #fff; font-size: 15px; line-height: 1; }
+#tideChip small { font-family: var(--body); font-size: 11px; color: var(--ink-soft); font-weight: 800; }
+#tideChip.soon { background: #fff; }
+#tideChip.soon .wave { background: #fff; color: var(--ink); }
+
+/* Minuteur : un médaillon rond, anneau qui se vide, chiffre au centre */
+#timer { position: fixed; right: 12px; bottom: calc(150px + var(--safe-bottom)); width: 66px; height: 66px; z-index: 4; pointer-events: none; }
 #timer[hidden] { display: none; }
-#timer .fill { position: absolute; inset: 0; background: var(--grass); transform-origin: left center; transition: transform 0.25s linear; }
-#timer .ico, #timer span { position: relative; }
-#timer .ico { width: 18px; height: 18px; }
-#timer span { font-family: var(--display); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
-#timer.low .fill { background: var(--coral); }
-#timer.low { animation: shake 0.4s infinite; }
-@keyframes shake { 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
-
-/* Marées */
-#tides { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; }
-.tide { border: 2.5px solid transparent; background: var(--paper-2); border-radius: 12px; padding: 5px 9px 6px; text-align: left; display: grid; gap: 0; min-width: 0; }
-.tide span { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); font-weight: 800; }
-.tide strong { font-family: var(--display); font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tide.now { background: #d6f6ff; border-color: var(--ink); }
+#timer svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+#timer .disc { fill: #fff; stroke: var(--ink); stroke-width: 3; }
+#timer .track { fill: none; stroke: #e6eef7; stroke-width: 7; }
+#timer .left { fill: none; stroke: var(--grass); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 0.25s linear, stroke 0.3s; }
+#timer .num { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; }
+#timer .num small { position: absolute; bottom: 9px; font-size: 8.5px; letter-spacing: 0.08em; font-family: var(--body); font-weight: 800; color: var(--ink-soft); text-transform: uppercase; }
+#timer .shadow { position: absolute; inset: 4px 0 -4px; border-radius: 50%; background: var(--ink); }
+#timer.low .left { stroke: var(--coral); }
+#timer.low { animation: beat 0.6s ease-in-out infinite; }
+@keyframes beat { 50% { transform: scale(1.1); } }
 
 /* Messages */
-#hint { position: fixed; left: 12px; right: 12px; bottom: calc(202px + var(--safe-bottom)); text-align: center; pointer-events: none; }
-#hint span { display: inline-block; background: #fff; border: 2.5px solid var(--ink); box-shadow: 0 3px 0 var(--ink); padding: 6px 14px; border-radius: 999px; font-family: var(--display); font-weight: 600; font-size: 15px; }
+#hint { position: fixed; left: 12px; right: 84px; bottom: calc(180px + var(--safe-bottom)); text-align: left; pointer-events: none; }
+#hint span { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #fff; border: 2.5px solid var(--ink); box-shadow: 0 3px 0 var(--ink); padding: 6px 14px; border-radius: 999px; font-family: var(--display); font-weight: 600; font-size: 14.5px; }
 #hint span:empty { display: none; }
 #toasts { position: fixed; top: calc(140px + var(--safe-top)); left: 12px; right: 12px; display: grid; gap: 7px; justify-items: center; pointer-events: none; z-index: 20; }
 .toast { background: var(--paper); border: 2.5px solid var(--ink); box-shadow: 0 3px 0 var(--ink); padding: 7px 13px; border-radius: 14px; font-size: 14px; max-width: 420px; animation: toastIn 0.3s cubic-bezier(0.3, 1.5, 0.5, 1); }
@@ -113,30 +119,63 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 @keyframes tumble { 0% { transform: rotate(-14deg) translateY(-6px); } 50% { transform: rotate(14deg) translateY(4px); } 100% { transform: rotate(-14deg) translateY(-6px); } }
 @keyframes land { from { transform: scale(1.35) rotate(-8deg); } }
 
-/* Main et actions */
-#bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 10px calc(12px + var(--safe-bottom)); display: grid; gap: 10px; }
-#hand { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding: 6px; min-height: 76px; }
-.spect { grid-column: 1 / -1; display: grid; place-items: center; color: var(--ink-soft); font-size: 14px; }
-.card { display: grid; justify-items: center; gap: 0; padding: 4px 0 3px; border-radius: 11px; background: #fff; border: 2.5px solid var(--ink); font-variant-numeric: tabular-nums; }
-.card .n { font-family: var(--display); font-weight: 700; font-size: 18px; line-height: 1.1; }
-.card .lb { font-size: 10px; color: var(--ink-soft); font-weight: 800; }
-.card.r-bois { background: #e3f6d8; } .card.r-pierre { background: #ffe1d2; } .card.r-lin { background: #e4e9ff; }
-.card.r-grain { background: #fff3c2; } .card.r-cristal { background: #d9f6fa; } .card.r-fortune { background: #fff; }
-.card.bump { animation: bump 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
-@keyframes bump { 35% { transform: scale(1.22) rotate(-4deg); background: var(--sun); } }
-#actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding: 6px 6px 8px; }
-.act { border: 2.5px solid var(--ink); background: #fff; border-radius: 13px; padding: 5px 1px 4px; display: grid; justify-items: center; align-content: start; gap: 1px; min-height: 68px; box-shadow: 0 3px 0 var(--ink); transition: transform 0.06s, box-shadow 0.06s; }
-.act:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
-.act .lb { font-family: var(--display); font-weight: 600; font-size: 12.5px; line-height: 1.1; }
-.act .co { display: flex; gap: 0; justify-content: center; min-height: 13px; font-size: 10px; color: var(--ink-soft); font-weight: 800; }
-.act .co .ico { width: 13px; height: 13px; }
-.act:disabled { cursor: default; background: #ece6da; border-color: #a9a69e; box-shadow: 0 3px 0 #a9a69e; }
-.act:disabled > * { opacity: 0.4; filter: grayscale(1); }
-.act.on { background: var(--ink); color: #fff; }
-.act.on .co { color: #cfd6ea; }
-.act.primary:not(:disabled) { background: var(--sun); animation: nudge 1.4s ease-in-out infinite; }
-.act.go:not(:disabled) { background: #c9f2c4; }
-@keyframes nudge { 50% { transform: translateY(-3px); box-shadow: 0 6px 0 var(--ink); } }
+/* Main : seulement les cartes possédées, en petite pile avec leur nombre */
+#bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 10px calc(10px + var(--safe-bottom)); display: grid; gap: 8px; pointer-events: none; }
+#hand { display: flex; gap: 8px; align-items: flex-end; min-height: 62px; padding: 0 2px; pointer-events: auto; }
+.empty { font-size: 13px; color: var(--ink); background: rgba(255, 248, 236, 0.85); border: 2.5px dashed var(--ink); border-radius: 12px; padding: 7px 12px; }
+.rcard { position: relative; width: 44px; height: 58px; border-radius: 9px; border: 2.5px solid var(--ink); box-shadow: 0 3px 0 var(--ink); display: grid; place-items: center; background: #fff; }
+.rcard::before { content: ""; position: absolute; inset: 3px; border-radius: 6px; border: 2px solid rgba(255, 255, 255, 0.75); }
+.rcard .ico { width: 30px; height: 30px; }
+.rcard .n { position: absolute; top: -9px; right: -9px; min-width: 24px; height: 24px; padding: 0 5px; border-radius: 12px; background: var(--ink); color: #fff; border: 2px solid #fff; display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rcard.stack { box-shadow: 3px -3px 0 -0.5px #fff, 3px -3px 0 2px var(--ink), 0 3px 0 var(--ink); }
+.rcard.r-bois { background: #8fd58a; } .rcard.r-pierre { background: #ffad8a; } .rcard.r-lin { background: #b8c4ff; }
+.rcard.r-grain { background: #ffe07a; } .rcard.r-cristal { background: #9fe8f1; }
+.rcard.coin { width: 46px; height: 46px; border-radius: 50%; background: #fff3c2; margin-left: auto; }
+.rcard.coin::before { border-radius: 50%; }
+.rcard.hit { animation: hit 0.45s cubic-bezier(0.3, 1.7, 0.5, 1); }
+@keyframes hit { 40% { transform: scale(1.18) rotate(-5deg); } }
+/* Icône qui tombe dans la main avec son « +N » */
+.drop { position: fixed; z-index: 30; pointer-events: none; display: flex; align-items: center; gap: 2px; animation: drop 1.05s cubic-bezier(0.25, 1.3, 0.5, 1) forwards; }
+.drop .ico { width: 34px; height: 34px; filter: drop-shadow(0 2px 0 rgba(29, 43, 79, 0.35)); }
+.drop b { font-family: var(--display); font-weight: 700; font-size: 20px; color: #fff; -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill; }
+@keyframes drop { 0% { transform: translateY(-110px) scale(0.6); opacity: 0; } 25% { opacity: 1; } 55% { transform: translateY(0) scale(1.15); } 70% { transform: translateY(-8px) scale(1); } 85% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(0); opacity: 0; } }
+
+/* Actions : des boutons ronds sur une barre en pilule, le dé au centre */
+#actions { display: flex; align-items: flex-end; justify-content: space-between; gap: 2px; padding: 6px 8px 5px; border-radius: 26px; pointer-events: auto; }
+.act { flex: 1; min-width: 0; border: 0; background: none; padding: 0; display: grid; justify-items: center; gap: 2px; }
+.act .bubble { width: 48px; height: 48px; border-radius: 50%; border: var(--line); background: #fff; display: grid; place-items: center; box-shadow: 0 3px 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s; }
+.act .bubble .ico { width: 30px; height: 30px; }
+.act .lb { font-family: var(--display); font-weight: 600; font-size: 11.5px; line-height: 1; }
+.act .co { display: flex; justify-content: center; min-height: 11px; }
+.act .co .ico { width: 11px; height: 11px; }
+.act:active:not(:disabled) .bubble { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+.act:disabled { cursor: default; }
+.act:disabled .bubble { background: #ece6da; border-color: #b5afa3; box-shadow: 0 3px 0 #b5afa3; }
+.act:disabled .bubble .ico, .act:disabled .co { opacity: 0.35; filter: grayscale(1); }
+.act:disabled .lb { color: #9b978e; }
+.act.on .bubble { background: var(--ink); }
+.act.on .lb { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+.act.dice .bubble { width: 64px; height: 64px; margin-top: -22px; background: var(--sun); box-shadow: 0 5px 0 var(--ink); }
+.act.dice .bubble .ico { width: 38px; height: 38px; }
+.act.dice:not(:disabled) .bubble { animation: nudge 1.4s ease-in-out infinite; }
+.act.end:not(:disabled) .bubble { background: #c9f2c4; }
+.act.dice:disabled .bubble { background: #ece6da; border-color: #b5afa3; box-shadow: 0 4px 0 #b5afa3; }
+@keyframes nudge { 50% { transform: translateY(-4px) rotate(-6deg); box-shadow: 0 9px 0 var(--ink); } }
+
+/* Proposition d'échange en cours */
+#offerPanel { position: fixed; left: 10px; right: 10px; bottom: calc(150px + var(--safe-bottom)); z-index: 6; pointer-events: auto; padding: 10px 12px; display: grid; gap: 8px; animation: sheetIn 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+#offerPanel[hidden] { display: none; }
+#offerPanel .deal { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; font-family: var(--display); font-weight: 600; font-size: 15px; }
+#offerPanel .deal .ico { width: 26px; height: 26px; }
+#offerPanel .deal .x { font-family: var(--display); font-weight: 700; font-size: 17px; }
+#offerPanel .who { display: grid; gap: 5px; }
+#offerPanel .who > div { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+#offerPanel .who .st { margin-left: auto; font-size: 12px; color: var(--ink-soft); }
+.mini { border: 2.5px solid var(--ink); border-radius: 12px; padding: 5px 11px; font-family: var(--display); font-weight: 600; font-size: 14px; background: #fff; box-shadow: 0 2px 0 var(--ink); }
+.mini.yes { background: var(--grass); color: #fff; text-shadow: 0 1px 0 var(--ink); }
+.mini.no { background: #fff; }
+.mini:disabled { opacity: 0.4; }
+.dot { width: 16px; height: 16px; border-radius: 50%; flex: none; background: #d9dfee; border: 2.5px solid var(--ink); }
 
 /* Fenêtres */
 .overlay { position: fixed; inset: 0; background: rgba(29, 43, 79, 0.42); display: none; align-items: center; justify-content: center; padding: calc(14px + var(--safe-top)) 14px calc(18px + var(--safe-bottom)); z-index: 10; }
@@ -176,11 +215,26 @@ details ul { padding-left: 18px; margin: 8px 0 2px; display: grid; gap: 5px; }
 .resbtn.sel { background: var(--sun); transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
 .resbtn:disabled { background: #ece6da; border-color: #a9a69e; box-shadow: 0 3px 0 #a9a69e; }
 .resbtn:disabled > * { opacity: 0.4; filter: grayscale(1); }
+/* Fenêtre d'échange */
+.tabs { display: grid; grid-template-columns: 1fr 1fr; border: var(--line); border-radius: 14px; overflow: hidden; background: #fff; }
+.tabs button { border: 0; background: transparent; padding: 9px 0; font-family: var(--display); font-weight: 600; font-size: 16px; }
+.tabs button + button { border-left: 2.5px solid var(--ink); }
+.tabs button.sel { background: var(--sun); }
+.pick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.pick > div { display: grid; justify-items: center; gap: 3px; background: #fff; border: 2.5px solid var(--ink); border-radius: 13px; padding: 5px 2px; }
+.pick .ico { width: 28px; height: 28px; }
+.pick .cnt { font-family: var(--display); font-weight: 700; font-size: 18px; line-height: 1; font-variant-numeric: tabular-nums; }
+.pick .cnt.zero { color: #b8b3a8; }
+.pick .pm { display: flex; gap: 3px; }
+.pick .pm button { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper-2); font-family: var(--display); font-weight: 700; font-size: 15px; line-height: 1; padding: 0; }
+.pick .pm button:disabled { opacity: 0.3; }
+.pick small { font-size: 10px; color: var(--ink-soft); }
 #tradeSummary { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; color: var(--ink-soft); min-height: 44px; background: var(--paper-2); border-radius: 14px; padding: 6px; }
 #tradeSummary b { font-family: var(--display); font-weight: 700; font-size: 24px; color: var(--ink); }
 #tradeSummary .ico { width: 32px; height: 32px; }
 #tradeSummary .arrow { font-size: 20px; color: var(--ink); margin: 0 6px; }
 #lobbyCode { font-family: var(--display); font-weight: 700; font-size: 62px; letter-spacing: 0.16em; text-indent: 0.16em; text-align: center; color: #fff; -webkit-text-stroke: 9px var(--ink); paint-order: stroke fill; text-shadow: 0 5px 0 var(--ink); line-height: 1.05; }
+#paneB[hidden], #paneP[hidden] { display: none; }
 #lobbySeats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 #lobbySeats li { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 13px; background: #fff; border: 2.5px solid var(--ink); font-family: var(--display); font-weight: 600; font-size: 16px; }
 #lobbySeats li b { font-weight: 600; margin-right: auto; }
@@ -195,7 +249,7 @@ details ul { padding-left: 18px; margin: 8px 0 2px; display: grid; gap: 5px; }
 .install a:not(.big) { color: var(--ink); }
 .hero { display: flex; align-items: center; gap: 12px; }
 .hero .ico { width: 62px; height: 62px; }
-@media (prefers-reduced-motion: reduce) { .toast, .card.bump, .sheet, .act.primary:not(:disabled), #timer.low, #dice.roll .die, #dice.land .die { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .toast, .sheet, .act.dice:not(:disabled) .bubble, #timer.low, #dice.roll .die, #dice.land .die, .drop, .rcard.hit, #offerPanel { animation: none; } }
 </style>
 </head>
 <body>
@@ -203,25 +257,24 @@ details ul { padding-left: 18px; margin: 8px 0 2px; display: grid; gap: 5px; }
 
 <div id="top">
   <div class="bar" id="players"></div>
-  <div class="bar" id="timer" hidden><div class="fill"></div><svg class="ico" aria-hidden="true"><use href="#i-sablier"/></svg><span></span></div>
-  <div class="bar" id="tides">
-    <button class="tide now" id="tideNow" type="button"><span>Marée en cours</span><strong>—</strong></button>
-    <button class="tide" id="tideNext" type="button"><span>Prochaine marée</span><strong>—</strong></button>
-  </div>
+  <button class="tide" id="tideChip" type="button" hidden><span class="wave">≈</span><span><span id="tideTitle"></span> <small id="tideWhen"></small></span></button>
 </div>
+<button type="button" class="menuBtn" id="btnMenu" aria-label="Menu de la partie"><svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg></button>
+<div id="timer" hidden><span class="shadow"></span><svg viewBox="0 0 66 66"><circle class="disc" cx="33" cy="33" r="30"/><circle class="track" cx="33" cy="33" r="23"/><circle class="left" cx="33" cy="33" r="23" pathLength="100" stroke-dasharray="100" stroke-dashoffset="0"/></svg><div class="num"><span id="timerNum">90</span><small id="timerWho">vous</small></div></div>
 <div id="toasts" aria-live="polite"></div>
 <div id="dice"><div class="die" id="d1"></div><div class="die" id="d2"></div></div>
 <div id="hint"><span id="hintText"></span></div>
+<div class="bar" id="offerPanel" hidden></div>
 
 <div id="bottom">
-  <div class="bar" id="hand"></div>
+  <div id="hand"></div>
   <div class="bar" id="actions">
-    <button class="act primary" id="btnRoll" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-des"/></svg><span class="lb">Lancer</span><span class="co">les dés</span></button>
-    <button class="act" id="btnSentier" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-sentier"/></svg><span class="lb">Sentier</span><span class="co"></span></button>
-    <button class="act" id="btnCamp" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-camp"/></svg><span class="lb">Camp</span><span class="co"><svg class="ico"><use href="#i-bois"/></svg><svg class="ico"><use href="#i-pierre"/></svg><svg class="ico"><use href="#i-lin"/></svg><svg class="ico"><use href="#i-grain"/></svg></span></button>
-    <button class="act" id="btnBastion" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-bastion"/></svg><span class="lb">Bastion</span><span class="co"><svg class="ico"><use href="#i-grain"/></svg><svg class="ico"><use href="#i-grain"/></svg><svg class="ico"><use href="#i-cristal"/></svg><svg class="ico"><use href="#i-cristal"/></svg><svg class="ico"><use href="#i-cristal"/></svg></span></button>
-    <button class="act" id="btnBank" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-banque"/></svg><span class="lb">Banque</span><span class="co">échanger</span></button>
-    <button class="act go" id="btnEnd" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-fin"/></svg><span class="lb">Fin</span><span class="co">du tour</span></button>
+    <button class="act " id="btnBank" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-banque"/></svg></span><span class="lb">Échanger</span><span class="co"></span></button>
+    <button class="act " id="btnSentier" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-sentier"/></svg></span><span class="lb">Sentier</span><span class="co"></span></button>
+    <button class="act " id="btnCamp" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-camp"/></svg></span><span class="lb">Camp</span><span class="co"><svg class="ico"><use href="#i-bois"/></svg><svg class="ico"><use href="#i-pierre"/></svg><svg class="ico"><use href="#i-lin"/></svg><svg class="ico"><use href="#i-grain"/></svg></span></button>
+    <button class="act dice" id="btnRoll" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-des"/></svg></span><span class="lb">Lancer</span><span class="co"></span></button>
+    <button class="act " id="btnBastion" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-bastion"/></svg></span><span class="lb">Bastion</span><span class="co"><svg class="ico"><use href="#i-grain"/></svg><svg class="ico"><use href="#i-grain"/></svg><svg class="ico"><use href="#i-cristal"/></svg><svg class="ico"><use href="#i-cristal"/></svg><svg class="ico"><use href="#i-cristal"/></svg></span></button>
+    <button class="act end" id="btnEnd" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-fin"/></svg></span><span class="lb">Fin</span><span class="co"></span></button>
   </div>
 </div>
 
@@ -288,15 +341,23 @@ details ul { padding-left: 18px; margin: 8px 0 2px; display: grid; gap: 5px; }
   </div>
 </div>
 
-<!-- Banque -->
+<!-- Échanger -->
 <div class="overlay" id="bankOverlay">
   <div class="sheet">
-    <h2>Banque</h2>
-    <p>Le meilleur taux est appliqué automatiquement : banque, crique, comptoir, Phare et marée.</p>
-    <div class="field"><span>Je donne</span><div class="resgrid" id="giveGrid"></div></div>
-    <div class="field"><span>Je reçois</span><div class="resgrid" id="getGrid"></div></div>
-    <div id="tradeSummary"></div>
-    <div class="row2"><button class="ghost" id="btnBankClose" type="button">Fermer</button><button class="big" id="btnTrade" type="button">Échanger</button></div>
+    <h2>Échanger</h2>
+    <div class="tabs"><button type="button" id="tabPlayers" class="sel">Avec les joueurs</button><button type="button" id="tabBank">Avec la banque</button></div>
+    <div id="paneP" class="stack">
+      <div class="field"><span>Je donne</span><div class="pick" id="pickGive"></div></div>
+      <div class="field"><span>Je veux</span><div class="pick" id="pickWant"></div></div>
+      <div class="row2"><button class="ghost" id="btnTradeClose" type="button">Fermer</button><button class="big" id="btnPropose" type="button">Proposer</button></div>
+    </div>
+    <div id="paneB" class="stack" hidden>
+      <p>Le meilleur taux est appliqué automatiquement : banque, crique, comptoir, Phare et marée.</p>
+      <div class="field"><span>Je donne</span><div class="resgrid" id="giveGrid"></div></div>
+      <div class="field"><span>Je reçois</span><div class="resgrid" id="getGrid"></div></div>
+      <div id="tradeSummary"></div>
+      <div class="row2"><button class="ghost" id="btnBankClose" type="button">Fermer</button><button class="big" id="btnTrade" type="button">Échanger</button></div>
+    </div>
   </div>
 </div>
 

@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
@@ -66,24 +66,34 @@ const isMyTurn = () => { const st = S(); return !!st && st.phase !== 'over' && m
 const canQuickBuild = () => { const st = S(); return !!st && session.mode === 'online' && canBuildOutOfTurn(st, myPid()); };
 
 /* ---------- Affichage du HUD ---------- */
-function renderHUD(bumped = []) {
+let handSnap = null; // dernière main affichée : pour faire tomber les gains
+function plateHTML(st, q, me, online) {
+  const away = online && q.clientId && session.peers && !session.peers.has(q.clientId);
+  const initial = esc((q.nom || '?').trim().charAt(0).toUpperCase());
+  return `<div class="plate ${q.id === st.current && st.phase !== 'over' ? 'active' : ''} ${away ? 'away' : ''} ${online && q.id === me ? 'me' : ''}" data-pid="${q.id}">
+    <span class="avatar"><span class="face" style="background:${q.col}">${initial}</span>
+      <svg class="ring" viewBox="0 0 38 38"><circle class="track" cx="19" cy="19" r="17"/><circle class="left" cx="19" cy="19" r="17" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg></span>
+    <span class="who"><b>${esc(q.nom)}</b><span class="stats"><span title="Points de victoire">${icon('fortune')}${vp(q)}</span><span title="Cartes en main">${icon('carte')}${total(q)}</span></span></span></div>`;
+}
+function renderHUD() {
   const st = S(); if (!st) return;
   const me = myPid(), mine = me >= 0 ? st.players[me] : null;
   const online = session.mode === 'online';
-  $('players').classList.toggle('compact', st.players.length > 4);
-  $('players').classList.toggle('grid2', st.players.length === 3 || st.players.length === 4);
-  $('players').innerHTML = st.players.map(q => {
-    const away = online && q.clientId && session.peers && !session.peers.has(q.clientId);
-    const isMe = online && q.id === me, compact = st.players.length > 4;
-    return `<div class="pchip ${q.id === st.current ? 'active' : ''} ${away ? 'away' : ''} ${isMe ? 'me' : ''}"><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}${isMe && !compact ? ' (vous)' : ''}</b><span class="pts" title="Points">${vp(q)}</span><small class="cards" title="Cartes en main">${total(q)}</small></div>`;
-  }).join('') + `<button type="button" class="menuBtn" id="btnMenu" aria-label="Menu de la partie">${icon('menu')}</button>`;
-  $('btnMenu').onclick = openMenu;
-  $('tideNow').querySelector('strong').textContent = st.phase === 'setup' ? "Après l'installation" : tideTitle(st.tide);
-  $('tideNext').querySelector('strong').textContent = st.phase === 'setup' ? '—' : tideTitle(st.nextTide);
+  $('players').classList.toggle('three', st.players.length > 4);
+  $('players').innerHTML = st.players.map(q => plateHTML(st, q, me, online)).join('');
+  // Marée : visible seulement quand elle agit ou qu'elle est annoncée
+  const chip = $('tideChip');
+  if (st.phase !== 'setup' && (st.tide || st.nextTide)) {
+    chip.hidden = false; chip.classList.toggle('soon', !st.tide);
+    $('tideTitle').textContent = tideTitle(st.tide || st.nextTide);
+    $('tideWhen').textContent = st.tide ? 'ce tour' : 'au prochain tour';
+  } else chip.hidden = true;
+  // Main : seulement ce qu'on possède
   if (mine) {
-    $('hand').innerHTML = RES.map(r => `<div class="card r-${r} ${bumped.includes(r) ? 'bump' : ''}">${icon(r)}<span class="n">${mine.res[r]}</span><span class="lb">${RES_INFO[r].nom}</span></div>`).join('') +
-      `<div class="card r-fortune ${bumped.includes('fortune') ? 'bump' : ''}">${icon('fortune')}<span class="n">${mine.fortune}</span><span class="lb">Fortune</span></div>`;
-  } else $('hand').innerHTML = '<div class="spect">Vous regardez la partie</div>';
+    const cards = RES.filter(r => mine.res[r] > 0).map(r => `<div class="rcard r-${r} ${mine.res[r] > 1 ? 'stack' : ''}" data-r="${r}" title="${RES_INFO[r].nom}">${icon(r)}<span class="n">${mine.res[r]}</span></div>`).join('');
+    $('hand').innerHTML = (cards || '<div class="empty">Aucune ressource pour l’instant</div>') +
+      `<div class="rcard coin" data-r="fortune" title="Jetons de Fortune">${icon('fortune')}<span class="n">${mine.fortune}</span></div>`;
+  } else $('hand').innerHTML = '<div class="empty">Vous regardez la partie</div>';
   const mt = isMyTurn() && !waiting;
   const mb = (mt || canQuickBuild()) && !waiting;
   $('btnRoll').disabled = !(mt && st.phase === 'roll');
@@ -95,6 +105,28 @@ function renderHUD(bumped = []) {
   $('btnSentier').querySelector('.co').innerHTML = st.tide?.type === 'chantier-sentier' ? icon('bois') : icon('bois') + icon('pierre');
   for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).classList.toggle('on', uiMode === m);
   $('toasts').style.top = `${Math.round($('top').getBoundingClientRect().bottom + 8)}px`;
+  renderOffer(); renderTimer();
+}
+/* Les cartes gagnées tombent dans la main, avec leur « +N » */
+function dropGains() {
+  const st = S(), me = myPid(); if (!st || me < 0) { handSnap = null; return; }
+  const p = st.players[me], now = { ...p.res, fortune: p.fortune }, key = `${st.gameId}:${me}`;
+  const prev = handSnap && handSnap.key === key ? handSnap.v : null;
+  handSnap = { key, v: now };
+  if (!prev) return;
+  let i = 0;
+  for (const r of [...RES, 'fortune']) {
+    const d = now[r] - prev[r]; if (d <= 0) continue;
+    const slot = $('hand').querySelector(`[data-r="${r}"]`); if (!slot) continue;
+    const box = slot.getBoundingClientRect();
+    const el = document.createElement('div'); el.className = 'drop';
+    el.innerHTML = `${icon(r)}<b>+${d}</b>`;
+    el.style.left = `${box.left + box.width / 2 - 17}px`; el.style.top = `${box.top + 6}px`; el.style.animationDelay = `${i * 0.12}s`;
+    document.body.appendChild(el);
+    setTimeout(() => { slot.classList.remove('hit'); void slot.offsetWidth; slot.classList.add('hit'); }, 600 + i * 120);
+    setTimeout(() => el.remove(), 1300 + i * 120);
+    i++;
+  }
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
@@ -125,9 +157,9 @@ function refreshInteraction() {
   if (uiMode === 'camp') { showMarkers('vertex', legalCamps(st, me)); hint('Touchez une intersection lumineuse pour installer le camp'); return; }
   if (uiMode === 'bastion') { showMarkers('vertex', legalBastions(st, me)); hint('Touchez un de vos camps pour en faire un bastion'); return; }
   clearMarkers();
-  hint(st.phase === 'roll' ? `${cur.nom} : lancez les dés` : 'Construisez, échangez, puis finissez le tour');
+  hint(st.phase === 'roll' ? `${cur.nom} : lancez les dés` : `${cur.nom} : construisez ou échangez`);
 }
-function refreshAll(bumped) { renderHUD(bumped); refreshInteraction(); }
+function refreshAll() { renderHUD(); refreshInteraction(); }
 
 /* ---------- Réception d'un nouvel état ---------- */
 function onNewState(state, events, sequential) {
@@ -138,17 +170,17 @@ function onNewState(state, events, sequential) {
   const animate = sequential && viewGameId() === state.gameId;
   if (animate) playEvents(state, events); else buildView(state);
   waiting = false; clearTimeout(waitTimer);
-  let bumped = [];
+  let delayed = false;
   if (animate) {
     for (const ev of events) {
       if (ev.k === 'toast') setTimeout(() => toast(ev.msg, ev.ms), ev.delay || 0);
-      else if (ev.k === 'dice') showDice(ev.d);
-      else if (ev.k === 'prod') { const me = myPid(); bumped = [...new Set(ev.gains.filter(g => g.owner === me).map(g => g.res))]; if (ev.fortune.includes(me)) bumped.push('fortune'); }
-      else if (ev.k === 'bump' && ev.pid === myPid()) bumped = ev.res;
+      else if (ev.k === 'dice') { showDice(ev.d); delayed = true; }
       else if (ev.k === 'win') setTimeout(() => showWin(ev.pid), 1300);
     }
   } else if (state.phase === 'over' && state.winner != null) showWin(state.winner);
-  if (bumped.length) { renderHUD(); setTimeout(() => refreshAll(bumped), 750); } else refreshAll();
+  // Après un lancer, on laisse les dés atterrir avant de faire tomber les cartes
+  if (delayed) { refreshInteraction(); setTimeout(() => { refreshAll(); dropGains(); }, 800); }
+  else { refreshAll(); dropGains(); }
   // Signal discret quand c'est à moi de jouer
   const turnKey = `${state.gameId}:${state.round}:${state.current}:${state.setupStep}`;
   if (session.mode === 'online' && isMyTurn() && lastTurnSeen !== turnKey) {
@@ -184,15 +216,18 @@ function syncTimer(st) {
     deadline = Date.now() + (st.timerLeftMs ?? st.turnTime * 1000);
   }
 }
+/* Médaillon rond (en bas à droite) + anneau autour de l'avatar du joueur actif */
 function renderTimer() {
   const st = S(), el = $('timer');
+  const plate = document.querySelector('.plate.active');
   if (!st || !st.turnTime || !deadline || st.phase === 'over') { el.hidden = true; return; }
-  const left = Math.max(0, deadline - Date.now()), frac = left / (st.turnTime * 1000);
-  el.hidden = false;
-  el.classList.toggle('low', left <= 10000);
-  el.querySelector('.fill').style.transform = `scaleX(${Math.min(1, frac).toFixed(4)})`;
+  const left = Math.max(0, deadline - Date.now()), frac = Math.min(1, left / (st.turnTime * 1000)), low = left <= 10000;
+  el.hidden = false; el.classList.toggle('low', low);
+  el.querySelector('.left').setAttribute('stroke-dashoffset', (100 * (1 - frac)).toFixed(2));
   const sec = Math.ceil(left / 1000);
-  el.querySelector('span').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} · ${isMyTurn() ? 'à vous' : st.players[st.current].nom}`;
+  $('timerNum').textContent = sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : String(sec);
+  $('timerWho').textContent = isMyTurn() ? 'à vous' : st.players[st.current].nom;
+  if (plate) { plate.classList.toggle('low', low); plate.querySelector('.ring .left').setAttribute('stroke-dashoffset', (100 * (1 - frac)).toFixed(2)); }
   return left;
 }
 function autoPlay(st) {
@@ -232,7 +267,7 @@ function act(action) {
   const st = S(); if (!st) return;
   uiMode = null;
   if (session.mode === 'local' || session.isHost) {
-    const pid = session.mode === 'local' ? st.current : myPid();
+    const pid = session.mode === 'local' ? (action.t === 'respond' ? action.pid ?? st.current : st.current) : myPid();
     hostApply(pid, action);
   } else {
     waiting = true; refreshAll();
@@ -269,8 +304,8 @@ onTap((kind, id) => {
 $('btnRoll').onclick = () => act({ t: 'roll' });
 $('btnEnd').onclick = () => act({ t: 'end' });
 for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).onclick = () => { uiMode = uiMode === m ? null : m; refreshAll(); };
-$('tideNow').onclick = () => S()?.tide && toast(tideDesc(S().tide), 4000);
-$('tideNext').onclick = () => S()?.nextTide && toast(`Ensuite : ${tideDesc(S().nextTide)}`, 4000);
+$('tideChip').onclick = () => { const st = S(); if (!st) return; const t = st.tide || st.nextTide; if (t) toast(`${st.tide ? '' : 'Au prochain tour : '}${tideDesc(t)}`, 4500); };
+$('btnMenu').onclick = () => openMenu();
 
 /* ---------- Banque ---------- */
 let give_ = null, get_ = null;
@@ -285,8 +320,70 @@ function renderBank() {
   $('giveGrid').querySelectorAll('button').forEach(b => b.onclick = () => { give_ = b.dataset.r; if (get_ === give_) get_ = null; renderBank(); });
   $('getGrid').querySelectorAll('button').forEach(b => b.onclick = () => { get_ = b.dataset.r; renderBank(); });
 }
-$('btnBank').onclick = () => { give_ = null; get_ = null; renderBank(); showOverlay('bankOverlay'); };
+/* ---------- Échanges entre joueurs ---------- */
+let tradeTab = 'players', offerGive = {}, offerWant = {};
+function setTab(t) {
+  tradeTab = t;
+  $('tabPlayers').classList.toggle('sel', t === 'players'); $('tabBank').classList.toggle('sel', t === 'bank');
+  $('paneP').hidden = t !== 'players'; $('paneB').hidden = t !== 'bank';
+  if (t === 'bank') renderBank(); else renderPick();
+}
+function renderPick() {
+  const st = S(), p = st.players[myPid()];
+  const row = (id, bundle, max) => {
+    $(id).innerHTML = RES.map(r => { const n = bundle[r] || 0; return `<div>${icon(r)}<span class="cnt ${n ? '' : 'zero'}">${n}</span>
+      <span class="pm"><button type="button" data-r="${r}" data-d="-1" ${n ? '' : 'disabled'} aria-label="Moins de ${RES_INFO[r].nom}">−</button><button type="button" data-r="${r}" data-d="1" ${n < max(r) ? '' : 'disabled'} aria-label="Plus de ${RES_INFO[r].nom}">+</button></span></div>`; }).join('');
+    $(id).querySelectorAll('button').forEach(b => b.onclick = () => {
+      const r = b.dataset.r; bundle[r] = Math.max(0, (bundle[r] || 0) + +b.dataset.d);
+      if (bundle[r] && bundle === offerGive) delete offerWant[r]; if (bundle[r] && bundle === offerWant) delete offerGive[r];
+      renderPick();
+    });
+  };
+  row('pickGive', offerGive, r => p.res[r]);
+  row('pickWant', offerWant, () => 9);
+  const ok = Object.values(offerGive).some(n => n > 0) && Object.values(offerWant).some(n => n > 0);
+  $('btnPropose').disabled = !ok;
+  $('btnPropose').textContent = st.players.length > 2 ? 'Proposer à tous' : 'Proposer';
+}
+$('btnBank').onclick = () => { give_ = null; get_ = null; offerGive = {}; offerWant = {}; setTab('players'); showOverlay('bankOverlay'); };
+$('tabPlayers').onclick = () => setTab('players');
+$('tabBank').onclick = () => setTab('bank');
+$('btnTradeClose').onclick = hideOverlays;
+$('btnPropose').onclick = () => { const a = { t: 'offer', give: { ...offerGive }, want: { ...offerWant } }; hideOverlays(); act(a); };
 $('btnBankClose').onclick = hideOverlays;
+const bundleIcons = b => Object.entries(b).map(([r, n]) => `<span class="x">${n}</span>${icon(r)}`).join(' ');
+/* Bandeau de la proposition en cours : vu par celui qui propose et par les autres */
+function renderOffer() {
+  const st = S(), panel = $('offerPanel'), o = st?.offer;
+  if (!o || st.phase !== 'main') { panel.hidden = true; panel.dataset.id = ''; return; }
+  const me = myPid(), local = session.mode === 'local', from = st.players[o.from];
+  const mineOffer = local || me === o.from;
+  panel.hidden = false;
+  if (mineOffer) {
+    const rows = st.players.filter(q => q.id !== o.from).map(q => {
+      const r = o.responses[q.id], can = canPay(q, o.want);
+      let right;
+      if (r === 'accept') right = `<button type="button" class="mini yes" data-with="${q.id}">Échanger</button>`;
+      else if (r === 'decline') right = '<span class="st">refuse</span>';
+      else if (local) right = can ? `<button type="button" class="mini yes" data-acc="${q.id}">${esc(q.nom)} accepte</button>` : '<span class="st">n’a pas les cartes</span>';
+      else right = `<span class="st">${can ? 'réfléchit…' : 'n’a pas les cartes'}</span>`;
+      return `<div><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}</b><span class="st"></span>${right}</div>`;
+    }).join('');
+    panel.innerHTML = `<div class="deal"><span>${local ? esc(from.nom) + ' donne' : 'Vous donnez'}</span>${bundleIcons(o.give)}<span>contre</span>${bundleIcons(o.want)}</div>
+      <div class="who">${rows}</div><button type="button" class="mini no" id="btnCancelOffer">Annuler la proposition</button>`;
+    panel.querySelectorAll('[data-with]').forEach(b => b.onclick = () => act({ t: 'confirmOffer', id: o.id, with: +b.dataset.with }));
+    panel.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => hostApply(+b.dataset.acc, { t: 'respond', id: o.id, accept: true }));
+    $('btnCancelOffer').onclick = () => act({ t: 'cancelOffer' });
+  } else if (me >= 0) {
+    const r = o.responses[me], can = canPay(st.players[me], o.want);
+    panel.innerHTML = `<div class="deal"><span class="dot" style="background:${from.col}"></span><b>${esc(from.nom)}</b><span>donne</span>${bundleIcons(o.give)}<span>contre</span>${bundleIcons(o.want)}</div>` +
+      (r ? `<div class="deal"><span class="st">${r === 'accept' ? `Vous avez accepté. ${esc(from.nom)} choisit avec qui échanger…` : 'Vous avez refusé.'}</span></div>`
+         : `<div class="row2"><button type="button" class="mini no" id="btnDecline">Refuser</button><button type="button" class="mini yes" id="btnAccept" ${can ? '' : 'disabled'}>${can ? 'Accepter' : 'Cartes manquantes'}</button></div>`);
+    if (!r) { $('btnDecline').onclick = () => act({ t: 'respond', id: o.id, accept: false }); $('btnAccept').onclick = () => act({ t: 'respond', id: o.id, accept: true }); }
+    if (panel.dataset.id !== o.id && !r) { try { navigator.vibrate?.(40); } catch { /* indisponible */ } }
+  } else panel.hidden = true;
+  panel.dataset.id = o.id;
+}
 $('btnTrade').onclick = () => { if (!give_ || !get_) return; const a = { t: 'trade', give: give_, get: get_ }; hideOverlays(); act(a); };
 
 /* ---------- Menu de partie ---------- */

@@ -27,6 +27,7 @@ export const ICONS = {
   banque: g(`<path d="M24 7v31M10 13h28" fill="none"/><path d="M4 26h14a7 6 0 0 1-14 0z" fill="#7fd3f5"/><path d="M30 26h14a7 6 0 0 1-14 0z" fill="#7fd3f5"/>
     <path d="M10 13L4 26M10 13l8 13M38 13l-8 13M38 13l6 13" fill="none" stroke-width="2"/><rect x="14" y="38" width="20" height="6" rx="3" fill="#ffd23f"/>`),
   fin: g(`<circle cx="24" cy="24" r="19" fill="#5cc85a"/><path d="M19 14l11 10-11 10" fill="none" stroke="#fff" stroke-width="5"/>`),
+  carte: g(`<rect x="10" y="8" width="24" height="32" rx="4" fill="#b8c4ff" transform="rotate(-10 22 24)"/><rect x="15" y="9" width="24" height="32" rx="4" fill="#fff"/><circle cx="27" cy="25" r="5" fill="#ffd23f"/>`),
   menu: g(`<circle cx="12" cy="24" r="4" fill="${O}"/><circle cx="24" cy="24" r="4" fill="${O}"/><circle cx="36" cy="24" r="4" fill="${O}"/>`),
   sablier: g(`<path d="M12 5h24M12 43h24" fill="none"/><path d="M15 5c0 10 9 13 9 19s-9 9-9 19h18c0-10-9-13-9-19s9-9 9-19z" fill="#fff8ec"/><path d="M19 39c2-4 8-4 10 0z" fill="#ffd23f" stroke-width="2"/>`),
   partager: g(`<circle cx="35" cy="11" r="6" fill="#7b95ff"/><circle cx="13" cy="24" r="6" fill="#7b95ff"/><circle cx="35" cy="37" r="6" fill="#7b95ff"/><path d="M18 21l12-7M18 27l12 7" fill="none"/>`),
