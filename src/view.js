@@ -303,12 +303,36 @@ export function buildView(state) {
     o.position.copy(vpos(v.id, TOP)); world.add(o); view.vertexObjs.set(v.id, o);
   }
   view.robber = makeRobber(); world.add(view.robber); placeRobberAt(S.robber, false);
-  setTide(S.tide?.type);
+  setTide(S.tide?.type); renderSnow();
+}
+/* Tempête de neige : voile blanc sur les tuiles touchées et congères sur les chemins bloqués */
+const snowMat = new THREE.MeshStandardMaterial({ color: '#f4f8ff', roughness: 1, transparent: true, opacity: 0.55, flatShading: true });
+const drift = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true });
+function renderSnow() {
+  const key = S.snow ? S.snow.edges.join(',') : '';
+  if (view.snowKey === key) return;
+  if (view.snow) { world.remove(view.snow); view.snow = null; }
+  view.snowKey = key;
+  if (!S.snow) return;
+  const g = new THREE.Group();
+  for (const tid of S.snow.tiles) {
+    const t = S.tiles[tid];
+    const veil = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.04, 6), snowMat);
+    veil.position.set(t.x, TOP + 0.06, t.z); g.add(veil);
+  }
+  for (const eid of S.snow.edges) {
+    const e = S.edges[eid], a = S.vertices[e.v[0]], b = S.vertices[e.v[1]];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const bank = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, len * 0.7, 3, 6), drift);
+    bank.rotation.z = Math.PI / 2; bank.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+    bank.position.set((a.x + b.x) / 2, TOP + 0.08, (a.z + b.z) / 2); bank.castShadow = true; g.add(bank);
+  }
+  view.snow = g; world.add(g);
 }
 export const viewGameId = () => view?.gameId;
 export function setState(state) { S = state; }
 export function setTide(type) {
-  const col = { abondance: '#1f5a4a', disette: '#3a3a35', haut: '#4a4220', bas: '#2f2a48' }[type];
+  const col = { abondance: '#1f5a4a', disette: '#3a3a35', haut: '#4a4220', bas: '#2f2a48', tempete: '#3c5566' }[type];
   seaTarget = new THREE.Color(col || SEA_BASE);
 }
 
@@ -424,7 +448,7 @@ export function playEvents(state, events) {
     else if (ev.k === 'prod') animateProduction(ev.gains, reduceMotion ? 0 : 0.65);
     else if (ev.k === 'robber') placeRobberAt(ev.tile, true);
   }
-  setTide(S.tide?.type);
+  setTide(S.tide?.type); renderSnow();
 }
 
 /* ---------- Repères d'interaction ---------- */

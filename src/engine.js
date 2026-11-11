@@ -37,13 +37,14 @@ function buildTideDeck() {
   const d = [];
   for (const r of RES) d.push({ type: 'abondance', res: r }, { type: 'disette', res: r }, { type: 'haut', res: r }, { type: 'bas', res: r });
   d.push({ type: 'chantier-sentier', res: 'pierre' });
+  for (let i = 0; i < 5; i++) d.push({ type: 'tempete' }); // tempêtes de neige : environ un événement sur cinq
   return shuffle(d);
 }
 export function tideTitle(t) {
   if (!t) return '—';
   const n = t.res ? RES_INFO[t.res].nom : '';
   return ({ abondance: `Abondance · ${n}`, disette: `Disette · ${n}`, haut: `Cours haut · ${n}`, bas: `Cours bas · ${n}`,
-    'chantier-sentier': 'Chantier · Sentiers', 'chantier-carnet': 'Chantier · Carnets', calme: 'Mer calme' })[t.type];
+    'chantier-sentier': 'Chantier · Sentiers', 'chantier-carnet': 'Chantier · Carnets', calme: 'Mer calme', tempete: 'Tempête de neige' })[t.type];
 }
 export function tideDesc(t) {
   if (!t) return '';
@@ -56,21 +57,35 @@ export function tideDesc(t) {
     'chantier-sentier': 'Un sentier ne coûte que 1 Bois.',
     'chantier-carnet': 'Les carnets coûtent 1 Cristal de moins (carnets pas encore disponibles).',
     calme: 'Aucun effet. Le Phare échange à 3 contre 1.',
+    tempete: "La neige recouvre les chemins d'une partie de l'île : impossible d'y tracer un sentier jusqu'au prochain tour de table.",
   })[t.type] + (t.res && t.type !== 'chantier-carnet' ? ` Phare : ${r.nom} à 2 contre 1.` : '');
 }
-/* Les marées sont rares : 2 ou 3 par partie, à des tours tirés au sort (dès le tour 3,
-   au moins 3 tours d'écart), chacune annoncée un tour à l'avance et sur des ressources différentes. */
-function planTides() {
-  const deck = buildTideDeck(), plan = [], used = new Set();
-  const count = rand() < 0.5 ? 2 : 3;
-  let round = 3 + Math.floor(rand() * 2);
-  for (let i = 0; i < count; i++) {
-    let c = deck.pop(); while (c && used.has(c.res)) c = deck.pop();
-    if (!c) break;
-    used.add(c.res); plan.push({ round, card: c });
-    round += 3 + Math.floor(rand() * 3);
-  }
-  return plan;
+/* Type d'événement : marée (change une ressource) ou météo */
+export const isWeather = t => t?.type === 'tempete';
+export const eventKind = t => isWeather(t) ? 'Tempête' : 'Marée';
+/* Les événements restent une surprise : leur nombre n'est pas fixé ni annoncé. À chaque nouveau tour de table
+   (dès le 2e), s'il n'y en a pas eu depuis 3 tours, un événement peut être tiré pour le tour suivant
+   (4 au plus par partie, ressources différentes). Il est annoncé un tour à l'avance. */
+function maybeScheduleEvent(S) {
+  if (!S.eventDeck) return;
+  const next = S.round + 1, last = S.tidePlan.length ? S.tidePlan[S.tidePlan.length - 1].round : -Infinity;
+  if (S.round < 2 || S.tidePlan.length >= 4 || next - last < 3 || S.tidePlan.some(p => p.round === next)) return;
+  const chance = !S.tidePlan.length && S.round >= 5 ? 1 : 0.35;
+  if (rand() >= chance) return;
+  const used = new Set(S.tidePlan.map(p => p.card.res).filter(Boolean));
+  const storms = S.tidePlan.filter(p => isWeather(p.card)).length;
+  const i = S.eventDeck.findIndex(c => (c.res ? !used.has(c.res) : storms < 2));
+  if (i < 0) return;
+  S.tidePlan.push({ round: next, card: S.eventDeck.splice(i, 1)[0] });
+}
+/* Tempête de neige : une tuile et deux voisines, tous les chemins qui les bordent sont enneigés */
+function makeSnow(S) {
+  const land = S.tiles.filter(t => t.id !== S.center);
+  const first = land[Math.floor(rand() * land.length)];
+  const touch = (a, b) => a.vertices.some(v => b.vertices.includes(v));
+  const near = shuffle(land.filter(t => t.id !== first.id && touch(t, first))).slice(0, 2);
+  const tiles = [first.id, ...near.map(t => t.id)];
+  return { tiles, edges: S.edges.filter(e => e.tiles.some(t => tiles.includes(t))).map(e => e.id) };
 }
 
 /* ---------- Génération de l'île ---------- */
@@ -186,7 +201,7 @@ export function createGame({ seats, win = 10, seed = Math.floor(Math.random() * 
     robber: isl.center, tidePlan: [], tide: null, nextTide: null, dice: null, winner: null, offer: null,
   };
   rand = Math.random;
-  S.tidePlan = planTides();
+  S.eventDeck = buildTideDeck();
   S.current = S.setupOrder[0];
   return S;
 }
@@ -206,7 +221,8 @@ export function legalCamps(S, pid, setup = S.phase === 'setup') {
 }
 export function legalRoads(S, pid, setup = S.phase === 'setup') {
   if (setup) return S.lastCamp == null ? [] : S.vertices[S.lastCamp].edges.filter(e => S.edges[e].road == null);
-  return S.edges.filter(e => e.road == null && e.v.some(vid => {
+  const snow = new Set(S.snow?.edges || []);
+  return S.edges.filter(e => e.road == null && !snow.has(e.id) && e.v.some(vid => {
     const v = S.vertices[vid];
     if (v.building && v.building.owner === pid) return true;
     if (v.building && v.building.owner !== pid) return false;
@@ -225,7 +241,7 @@ export function rateFor(S, pid, r) {
   if (owned.some(v => v.port === r)) rate = 2;
   if (owned.some(v => v.tiles.includes(S.center))) {
     if (tide && tide.res && tide.type !== 'chantier-carnet' && tide.res === r) rate = Math.min(rate, 2);
-    else if (!tide || tide.type === 'calme') rate = Math.min(rate, 3);
+    else if (!tide || !tide.res || tide.type === 'calme') rate = Math.min(rate, 3);
   }
   if (tide?.type === 'bas' && tide.res === r) rate += 1;
   return rate;
@@ -248,10 +264,12 @@ function give(S, p, r, n) { const k = Math.min(n, S.bank[r]); p.res[r] += k; S.b
 function reveal(S, ids) { const out = []; for (const id of ids) { const t = S.tiles[id]; if (!t.revealed) { t.revealed = true; out.push(id); } } return out; }
 function startRound(S) {
   S.round++;
+  maybeScheduleEvent(S);
   S.tide = S.tidePlan.find(p => p.round === S.round)?.card || null;
+  S.snow = isWeather(S.tide) ? makeSnow(S) : null;
   S.nextTide = S.tidePlan.find(p => p.round === S.round + 1)?.card || null;
 }
-export const tidesLeft = S => S.tidePlan.filter(p => p.round > S.round).length;
+export const tidesLeft = S => S.tidePlan.filter(p => p.round > S.round).length; // seulement l'événement déjà annoncé
 function produce(S, n) {
   const gains = [];
   const demand = Object.fromEntries(RES.map(r => [r, new Map()]));
@@ -359,7 +377,7 @@ export function applyAction(S, pid, a) {
       S.setupStep++; S.setupSub = 'camp'; S.lastCamp = S.setupStep >= S.setupOrder.length ? null : S.lastCamp;
       if (S.setupStep >= S.setupOrder.length) {
         S.phase = 'roll'; S.current = 0; startRound(S);
-        ev.push({ k: 'toast', msg: `Que l'expédition commence ! ${S.tidePlan.length} marées vont bouleverser l'île pendant la partie.`, ms: 4200, delay: 900 });
+        ev.push({ k: 'toast', msg: "Que l'expédition commence ! Gare aux marées et aux tempêtes…", ms: 4200, delay: 900 });
       } else S.current = S.setupOrder[S.setupStep];
       return { ok: true, events: ev };
     }
@@ -466,8 +484,8 @@ export function applyAction(S, pid, a) {
     S.dice = null;
     if (S.current === 0) {
       startRound(S);
-      if (S.tide) ev.push({ k: 'tide', tide: S.tide }, { k: 'toast', msg: `Marée : ${tideTitle(S.tide)}. ${tideDesc(S.tide)}`, ms: 5000 });
-      else if (S.nextTide) ev.push({ k: 'toast', msg: `Une marée arrive au prochain tour : ${tideTitle(S.nextTide)}`, ms: 4200 });
+      if (S.tide) ev.push({ k: 'tide', tide: S.tide }, { k: 'toast', msg: `${isWeather(S.tide) ? '' : 'Marée : '}${tideTitle(S.tide)}. ${tideDesc(S.tide)}`, ms: 5000 });
+      if (S.nextTide) ev.push({ k: 'toast', msg: isWeather(S.nextTide) ? 'Une tempête de neige approche : elle frappera au prochain tour.' : `Une marée arrive au prochain tour : ${tideTitle(S.nextTide)}`, ms: 4200, delay: S.tide ? 5200 : 0 });
     }
     S.offer = null;
     S.phase = 'roll';

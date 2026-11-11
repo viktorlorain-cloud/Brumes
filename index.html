@@ -47,6 +47,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
 .ico { width: 24px; height: 24px; flex: none; display: block; }
 .ico.sm { width: 17px; height: 17px; display: inline-block; vertical-align: -3px; margin: 0 1px; }
 [hidden] { display: none !important; }
+body.drawer-open #hint { display: none; }
 body.home #top, body.home #bottom, body.home .menuBtn, body.home #hint, body.home #offerPanel { display: none; }
 
 /* ===== Écran de jeu ===== */
@@ -85,7 +86,7 @@ body.home #top, body.home #bottom, body.home .menuBtn, body.home #hint, body.hom
 #tideChip small { color: var(--ink-soft); }
 
 /* Messages */
-#hint { position: fixed; left: 12px; right: 12px; bottom: calc(150px + var(--safe-bottom)); text-align: center; pointer-events: none; }
+#hint { position: fixed; left: 12px; right: 12px; bottom: calc(96px + var(--safe-bottom)); text-align: center; pointer-events: none; }
 #hint span { display: inline-block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--panel); border: 1px solid var(--line); padding: 6px 13px; border-radius: 999px; font-size: 13px; }
 #hint span:empty { display: none; }
 #toasts { position: fixed; left: 12px; right: 12px; top: 120px; display: grid; gap: 6px; justify-items: center; pointer-events: none; z-index: 20; }
@@ -106,16 +107,20 @@ body.home #top, body.home #bottom, body.home .menuBtn, body.home #hint, body.hom
 @keyframes tumble { 0% { transform: rotate(-12deg) translateY(-4px); } 50% { transform: rotate(12deg) translateY(3px); } 100% { transform: rotate(-12deg) translateY(-4px); } }
 @keyframes land { from { transform: scale(1.25); } }
 
-/* Main : seulement les cartes possédées */
+/* Bas de l'écran, organisé comme le jeu de base : la main à gauche, trois boutons à droite */
 #bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 8px calc(8px + var(--safe-bottom)); display: grid; gap: 8px; pointer-events: none; }
-#hand { display: flex; gap: 8px; align-items: flex-end; min-height: 56px; padding: 8px 4px 0; pointer-events: auto; }
-.empty { font-size: 12.5px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 11px; }
-.rcard { position: relative; width: 38px; height: 50px; border-radius: 8px; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 70%, #fff) 0%, var(--rc) 100%); display: grid; place-items: center; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35), inset 0 0 0 1.5px rgba(255, 255, 255, 0.3); }
+.bar { display: flex; align-items: flex-end; gap: 8px; pointer-events: auto; }
+#hand { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: flex-end; min-height: 62px; padding: 9px 9px 0 0; overflow-x: auto; scrollbar-width: none; }
+.empty { font-size: 12px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; white-space: nowrap; }
+.rcard { position: relative; flex: none; width: 40px; height: 53px; padding: 0; border: 0; border-radius: 8px; background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 70%, #fff) 0%, var(--rc) 100%); display: grid; place-items: center; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35), inset 0 0 0 1.5px rgba(255, 255, 255, 0.3); cursor: default; }
+.rcard.pickable { cursor: pointer; }
 .rcard .ico { width: 27px; height: 27px; }
 .rcard .n { position: absolute; top: -8px; right: -8px; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 11px; background: #0b1a25; color: #fff; border: 1.5px solid rgba(255, 255, 255, 0.6); display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rcard .sel { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); min-width: 22px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--lamp); color: #2a1d05; display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 11.5px; }
+.rcard.picked { box-shadow: 0 0 0 2.5px var(--lamp), 0 4px 10px rgba(0, 0, 0, 0.35); }
 .rcard.r-bois { --rc: #3d7a46; } .rcard.r-pierre { --rc: #c0683c; } .rcard.r-lin { --rc: #98b957; }
 .rcard.r-grain { --rc: #dfac45; } .rcard.r-cristal { --rc: #7c879e; }
-.rcard.coin { width: 40px; height: 40px; border-radius: 50%; margin-left: auto; background: radial-gradient(circle at 40% 35%, #3a4a58, #17252f); }
+.rcard.coin { width: 40px; height: 40px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3a4a58, #17252f); }
 .rcard.hit { animation: hit 0.4s ease-out; }
 @keyframes hit { 40% { transform: translateY(-6px) scale(1.12); } }
 .drop { position: fixed; z-index: 30; pointer-events: none; display: flex; align-items: center; gap: 2px; animation: drop 1s cubic-bezier(0.25, 1.25, 0.5, 1) forwards; }
@@ -123,27 +128,51 @@ body.home #top, body.home #bottom, body.home .menuBtn, body.home #hint, body.hom
 .drop b { font-family: var(--display); font-weight: 600; font-size: 18px; color: var(--lamp); text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7); }
 @keyframes drop { 0% { transform: translateY(-100px) scale(0.7); opacity: 0; } 25% { opacity: 1; } 60% { transform: translateY(0) scale(1.1); } 80% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-4px); opacity: 0; } }
 
-/* Barre d'actions : sobre, le dé mis en avant */
-#actions { display: flex; align-items: center; justify-content: space-between; gap: 2px; padding: 6px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); pointer-events: auto; }
-.act { flex: 1; min-width: 0; border: 0; background: none; padding: 0; display: grid; justify-items: center; gap: 3px; }
-.act .bubble { width: 42px; height: 42px; border-radius: 13px; background: var(--panel-2); display: grid; place-items: center; transition: transform 0.08s, background 0.15s; }
-.act .bubble .ico { width: 26px; height: 26px; }
-.act .lb { font-size: 10.5px; color: var(--ink-soft); line-height: 1; white-space: nowrap; }
-.act .co { display: none; }
-.act:active:not(:disabled) .bubble { transform: scale(0.92); }
-.act:disabled { cursor: default; }
-.act:disabled .bubble .ico { opacity: 0.28; filter: grayscale(1); }
-.act:disabled .lb { opacity: 0.45; }
-.act.on .bubble { background: var(--lamp); }
+/* Trois boutons : Échanger, Construire, puis Lancer ou Fin du tour */
+#actions { display: flex; gap: 6px; flex: none; }
+.act { position: relative; width: 56px; height: 60px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); padding: 0; display: grid; justify-items: center; align-content: center; gap: 2px; box-shadow: var(--shadow); }
+.act .ico { width: 28px; height: 28px; }
+.act .lb { font-size: 9.5px; color: var(--ink-soft); line-height: 1; white-space: nowrap; }
+.act:active:not(:disabled) { transform: scale(0.94); }
+.act:disabled { cursor: default; background: var(--panel); }
+.act:disabled .ico { opacity: 0.3; filter: grayscale(1); }
+.act:disabled .lb { opacity: 0.5; }
+.act.on { background: var(--panel-3); border-color: var(--lamp); }
 .act.on .lb { color: var(--lamp); }
-.act.dice .bubble { width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(180deg, var(--lamp), var(--lamp-deep)); box-shadow: 0 6px 14px rgba(240, 169, 58, 0.4); }
-.act.dice:disabled .bubble { background: var(--panel-2); box-shadow: none; }
-.act.dice:not(:disabled) .bubble { animation: glow 1.6s ease-in-out infinite; }
-@keyframes glow { 50% { box-shadow: 0 6px 22px rgba(255, 207, 107, 0.75); } }
-.act.end:not(:disabled) .bubble { background: rgba(92, 200, 90, 0.22); }
+.act .badge { position: absolute; top: -7px; right: -7px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--lamp); color: #2a1d05; font-family: var(--display); font-weight: 600; font-size: 11.5px; display: grid; place-items: center; }
+.act.dice { background: linear-gradient(180deg, var(--lamp), var(--lamp-deep)); border-color: transparent; }
+.act.dice .lb { color: #2a1d05; }
+.act.dice:not(:disabled) { animation: glow 1.6s ease-in-out infinite; }
+@keyframes glow { 50% { box-shadow: 0 6px 22px rgba(255, 207, 107, 0.7); } }
+.act.end:not(:disabled) { background: #1f4a37; border-color: rgba(92, 200, 90, 0.5); }
 
+/* Section qui monte au-dessus de la barre : échange ou construction */
+.drawer { pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 10px; animation: rise 0.18s ease-out; }
+@keyframes rise { from { transform: translateY(12px); opacity: 0; } }
+#tradePanel { display: grid; grid-template-columns: 1fr 92px; gap: 10px; }
+.tp-rows { display: grid; gap: 8px; min-width: 0; }
+.tp-lb { font-size: 11px; color: var(--ink-soft); display: block; margin-bottom: 4px; }
+.chips { display: flex; gap: 5px; flex-wrap: wrap; min-height: 36px; align-items: center; }
+.chip { position: relative; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); display: grid; place-items: center; padding: 0; }
+.chip .ico { width: 24px; height: 24px; }
+.chip .k { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--lamp); color: #2a1d05; font-family: var(--display); font-weight: 600; font-size: 11px; display: grid; place-items: center; }
+.chip.zero .ico { opacity: 0.45; }
+.chips .none { font-size: 12px; color: var(--ink-soft); }
+.tp-side { display: grid; gap: 6px; align-content: stretch; }
+.tp-btn { border: 0; border-radius: 12px; padding: 6px 4px; font-family: var(--display); font-weight: 600; font-size: 14.5px; display: grid; justify-items: center; align-content: center; gap: 1px; background: linear-gradient(180deg, var(--lamp), var(--lamp-deep)); color: #2a1d05; }
+.tp-btn.bank { background: var(--panel-3); color: var(--ink); }
+.tp-btn small { font-family: var(--body); font-size: 10px; font-weight: 700; opacity: 0.8; }
+.tp-btn:disabled { background: var(--panel-2); color: var(--ink-soft); cursor: default; }
+#buildPanel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bopt { border: 1px solid var(--line); background: var(--panel-2); border-radius: 12px; padding: 8px 4px 7px; display: grid; justify-items: center; gap: 4px; }
+.bopt > .ico { width: 30px; height: 30px; }
+.bopt .lb { font-size: 12.5px; }
+.bopt .co { display: flex; gap: 1px; }
+.bopt .co .ico { width: 15px; height: 15px; }
+.bopt.on { border-color: var(--lamp); background: rgba(255, 207, 107, 0.14); }
+.bopt:disabled { opacity: 0.38; cursor: default; }
 /* Proposition d'échange */
-#offerPanel { position: fixed; left: 8px; right: 8px; bottom: calc(146px + var(--safe-bottom)); z-index: 6; padding: 10px 12px; display: grid; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); animation: toastIn 0.25s ease-out; }
+#offerPanel { position: fixed; left: 8px; right: 8px; bottom: calc(92px + var(--safe-bottom)); z-index: 6; padding: 10px 12px; display: grid; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); animation: toastIn 0.25s ease-out; }
 #offerPanel .deal { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; font-size: 14px; }
 #offerPanel .deal .ico { width: 24px; height: 24px; }
 #offerPanel .deal .x { font-family: var(--display); font-weight: 600; font-size: 16px; }
@@ -259,14 +288,29 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 <div id="offerPanel" hidden></div>
 
 <div id="bottom">
-  <div id="hand"></div>
-  <div id="actions">
-    <button class="act" id="btnBank" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-banque"/></svg></span><span class="lb">Échanger</span><span class="co"></span></button>
-    <button class="act" id="btnSentier" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-sentier"/></svg></span><span class="lb">Sentier</span><span class="co"></span></button>
-    <button class="act" id="btnCamp" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-camp"/></svg></span><span class="lb">Camp</span><span class="co"></span></button>
-    <button class="act dice" id="btnRoll" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-des"/></svg></span><span class="lb">Lancer</span><span class="co"></span></button>
-    <button class="act" id="btnBastion" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-bastion"/></svg></span><span class="lb">Bastion</span><span class="co"></span></button>
-    <button class="act end" id="btnEnd" type="button" disabled><span class="bubble"><svg class="ico" aria-hidden="true"><use href="#i-fin"/></svg></span><span class="lb">Fin du tour</span><span class="co"></span></button>
+  <div id="tradePanel" class="drawer" hidden>
+    <div class="tp-rows">
+      <div><span class="tp-lb">Je donne · touchez vos cartes</span><div class="chips" id="tpGive"></div></div>
+      <div><span class="tp-lb">Je veux</span><div class="chips" id="tpWant"></div></div>
+    </div>
+    <div class="tp-side">
+      <button type="button" class="tp-btn" id="btnPropose">Joueurs<small>proposer</small></button>
+      <button type="button" class="tp-btn bank" id="btnTrade">Banque<small id="bankRate">4:1</small></button>
+    </div>
+  </div>
+  <div id="buildPanel" class="drawer" hidden>
+    <button type="button" class="bopt" id="btnSentier"><svg class="ico" aria-hidden="true"><use href="#i-sentier"/></svg><span class="lb">Sentier</span><span class="co"></span></button>
+    <button type="button" class="bopt" id="btnCamp"><svg class="ico" aria-hidden="true"><use href="#i-camp"/></svg><span class="lb">Camp</span><span class="co"></span></button>
+    <button type="button" class="bopt" id="btnBastion"><svg class="ico" aria-hidden="true"><use href="#i-bastion"/></svg><span class="lb">Bastion</span><span class="co"></span></button>
+  </div>
+  <div class="bar">
+    <div id="hand"></div>
+    <div id="actions">
+      <button class="act" id="btnBank" type="button" disabled aria-label="Échanger"><svg class="ico" aria-hidden="true"><use href="#i-banque"/></svg><span class="lb">Échanger</span></button>
+      <button class="act" id="btnBuild" type="button" disabled aria-label="Construire"><svg class="ico" aria-hidden="true"><use href="#i-camp"/></svg><span class="lb">Construire</span></button>
+      <button class="act dice" id="btnRoll" type="button" disabled aria-label="Lancer les dés"><svg class="ico" aria-hidden="true"><use href="#i-des"/></svg><span class="lb">Lancer</span></button>
+      <button class="act end" id="btnEnd" type="button" disabled hidden aria-label="Fin du tour"><svg class="ico" aria-hidden="true"><use href="#i-sablier"/></svg><span class="lb">Fin du tour</span></button>
+    </div>
   </div>
 </div>
 
@@ -316,7 +360,7 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
         <li>La brume cache les terrains : un camp ou un sentier révèle les tuiles qu'il touche.</li>
         <li>À votre tour : lancez les dés, puis construisez, échangez et finissez le tour.</li>
         <li>Si vous ne recevez rien sur un lancer, vous gagnez un jeton de Fortune. Avec 3 jetons, vous prenez une ressource au choix (Échanger › Banque).</li>
-        <li>2 ou 3 fois par partie, une marée change la production ou la valeur d'une ressource. Elle est annoncée un tour à l'avance.</li>
+        <li>De temps en temps, au hasard, un événement frappe l'île. Il est annoncé un tour à l'avance. Une marée change la production ou la valeur d'une ressource ; une tempête de neige bloque les chemins d'une partie de l'île pendant un tour de table.</li>
         <li>Un camp au contact du Phare échange à 2 contre 1 la ressource de la marée en cours (3 contre 1 sinon).</li>
         <li>Sur un 7, le Rôdeur bloque une tuile et vole une carte. Au-delà de 7 cartes, on en défausse la moitié.</li>
       </ul>
@@ -339,26 +383,6 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
     <p id="lobbyStatus">Connexion…</p>
     <button class="big" id="btnLaunch" type="button" style="display:none">Lancer la partie</button>
     <button class="ghost" id="btnLobbyLeave" type="button">Quitter</button>
-  </div>
-</div>
-
-<!-- Échanger -->
-<div class="overlay" id="bankOverlay">
-  <div class="sheet">
-    <h2>Échanger</h2>
-    <div class="tabs"><button type="button" id="tabPlayers" class="sel">Avec les joueurs</button><button type="button" id="tabBank">Avec la banque</button></div>
-    <div id="paneP" class="stack">
-      <div class="field"><span>Je donne</span><div class="pick" id="pickGive"></div></div>
-      <div class="field"><span>Je veux</span><div class="pick" id="pickWant"></div></div>
-      <div class="row2"><button class="ghost" id="btnTradeClose" type="button">Fermer</button><button class="big" id="btnPropose" type="button">Proposer</button></div>
-    </div>
-    <div id="paneB" class="stack" hidden>
-      <p>Le meilleur taux est appliqué automatiquement : banque, crique, comptoir, Phare et marée.</p>
-      <div class="field"><span>Je donne</span><div class="resgrid" id="giveGrid"></div></div>
-      <div class="field"><span>Je reçois</span><div class="resgrid" id="getGrid"></div></div>
-      <div id="tradeSummary"></div>
-      <div class="row2"><button class="ghost" id="btnBankClose" type="button">Fermer</button><button class="big" id="btnTrade" type="button">Échanger</button></div>
-    </div>
   </div>
 </div>
 

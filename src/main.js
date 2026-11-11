@@ -1,5 +1,5 @@
 /* Interface, salons et synchronisation de la partie */
-import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
+import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, viewGameId, resetCamera, markerScreenPositions, debugScene } from './view.js';
 import { openRoom } from './net.js';
@@ -100,23 +100,42 @@ function renderHUD() {
   if (st.phase !== 'setup' && (st.tide || st.nextTide)) {
     chip.hidden = false; chip.classList.toggle('soon', !st.tide);
     $('tideTitle').textContent = tideTitle(st.tide || st.nextTide);
+    chip.querySelector('span').textContent = isWeather(st.tide || st.nextTide) ? '❄' : '≈';
     $('tideWhen').textContent = st.tide ? 'ce tour' : 'au prochain tour';
   } else chip.hidden = true;
-  // Main : seulement ce qu'on possède
+  // Main : seulement ce qu'on possède. Pendant son tour, toucher une carte la met dans « Je donne »
+  const canTrade = isMyTurn() && !waiting && st.phase === 'main';
+  clampPick(mine);
   if (mine) {
-    const cards = RES.filter(r => mine.res[r] > 0).map(r => `<div class="rcard r-${r} ${mine.res[r] > 1 ? 'stack' : ''}" data-r="${r}" title="${RES_INFO[r].nom}">${icon(r)}<span class="n">${mine.res[r]}</span></div>`).join('');
-    $('hand').innerHTML = (cards || '<div class="empty">Aucune ressource pour l’instant</div>') +
-      `<div class="rcard coin" data-r="fortune" title="Jetons de Fortune">${icon('fortune')}<span class="n">${mine.fortune}</span></div>`;
+    const card = (r, cls, n) => { const k = give[r] || 0;
+      return `<button type="button" class="rcard ${cls} ${k ? 'picked' : ''} ${canTrade ? 'pickable' : ''}" data-r="${r}" title="${r === 'fortune' ? 'Jetons de Fortune' : RES_INFO[r].nom}" ${canTrade ? '' : 'tabindex="-1"'}>${icon(r)}<span class="n">${n}</span>${k ? `<span class="sel">${k}</span>` : ''}</button>`; };
+    const cards = RES.filter(r => mine.res[r] > 0).map(r => card(r, `r-${r}`, mine.res[r])).join('');
+    $('hand').innerHTML = (cards || '<div class="empty">Aucune ressource</div>') + (mine.fortune ? card('fortune', 'coin', mine.fortune) : '');
+    $('hand').querySelectorAll('.rcard').forEach(b => b.onclick = () => pickCard(b.dataset.r));
   } else $('hand').innerHTML = '<div class="empty">Vous regardez la partie</div>';
   const mt = isMyTurn() && !waiting;
-  const mb = (mt || canQuickBuild()) && !waiting;
+  const rolling = st.phase === 'roll' || st.phase === 'setup';
+  $('btnRoll').hidden = !rolling; $('btnEnd').hidden = rolling;
   $('btnRoll').disabled = !(mt && st.phase === 'roll');
-  $('btnSentier').disabled = !(mb && canBuild(st, me, 'sentier'));
-  $('btnCamp').disabled = !(mb && canBuild(st, me, 'camp'));
-  $('btnBastion').disabled = !(mb && canBuild(st, me, 'bastion'));
-  $('btnBank').disabled = !(mt && st.phase === 'main');
   $('btnEnd').disabled = !(mt && st.phase === 'main');
-  $('btnSentier').querySelector('.co').innerHTML = st.tide?.type === 'chantier-sentier' ? icon('bois') : icon('bois') + icon('pierre');
+  $('btnBank').disabled = !canTrade;
+  $('btnBuild').disabled = !(mt && st.phase === 'main');
+  if (!canTrade) tradeOpen = false;
+  if ($('btnBuild').disabled) buildOpen = false;
+  $('btnSentier').disabled = !canBuild(st, me, 'sentier');
+  $('btnCamp').disabled = !canBuild(st, me, 'camp');
+  $('btnBastion').disabled = !canBuild(st, me, 'bastion');
+  const costHTML = k => Object.entries(costOf(st, k)).flatMap(([r, n]) => Array(n).fill(icon(r))).join('');
+  for (const [id, k] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).querySelector('.co').innerHTML = costHTML(k);
+  $('btnBuild').classList.toggle('on', buildOpen || !!uiMode);
+  $('btnBank').classList.toggle('on', tradeOpen);
+  const nGive = Object.values(give).reduce((x, y) => x + y, 0);
+  $('btnBank').querySelector('.badge')?.remove();
+  if (nGive && !tradeOpen) $('btnBank').insertAdjacentHTML('beforeend', `<span class="badge">${nGive}</span>`);
+  $('buildPanel').hidden = !buildOpen;
+  $('tradePanel').hidden = !tradeOpen;
+  document.body.classList.toggle('drawer-open', tradeOpen || buildOpen);
+  if (tradeOpen) renderTrade();
   for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).classList.toggle('on', uiMode === m);
   renderOffer(); renderTimer();
   const call = document.querySelector('.pc.active .call');
@@ -215,6 +234,8 @@ $('btnDiscard').onclick = () => {
 function onNewState(state, events, sequential) {
   session.state = state;
   document.body.classList.remove('home');
+  const pk = `${state.gameId}:${state.round}:${state.current}`;
+  if (pk !== pickTurn) { pickTurn = pk; give = {}; want = {}; tradeOpen = false; buildOpen = false; }
   syncTimer(state);
   if (session.mode === 'online') store.set(KEY + 'last', { code: session.code, state });
   else store.set(KEY + 'local', state);
@@ -357,54 +378,54 @@ onTap((kind, id) => {
 });
 $('btnRoll').onclick = () => act({ t: 'roll' });
 $('btnEnd').onclick = () => act({ t: 'end' });
-for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).onclick = () => { uiMode = uiMode === m ? null : m; refreshAll(); };
+for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBastion', 'bastion']]) $(id).onclick = () => { uiMode = uiMode === m ? null : m; buildOpen = false; refreshAll(); };
+$('btnBuild').onclick = () => { buildOpen = !buildOpen; tradeOpen = false; if (!buildOpen) uiMode = null; refreshAll(); };
 $('tideChip').onclick = () => { const st = S(); if (!st) return; const t = st.tide || st.nextTide; if (t) toast(`${st.tide ? '' : 'Au prochain tour : '}${tideDesc(t)}`, 4500); };
 $('btnMenu').onclick = () => openMenu();
 
-/* ---------- Banque ---------- */
-let give_ = null, get_ = null;
-function renderBank() {
-  const st = S(), me = myPid(), p = st.players[me];
-  $('giveGrid').innerHTML = RES.map(r => { const rate = rateFor(st, me, r); return `<button type="button" class="resbtn ${give_ === r ? 'sel' : ''}" data-r="${r}" ${p.res[r] < rate ? 'disabled' : ''}>${icon(r)}${RES_INFO[r].nom}<small>${rate}:1 · ${p.res[r]} en main</small></button>`; }).join('') +
-    `<button type="button" class="resbtn ${give_ === 'fortune' ? 'sel' : ''}" data-r="fortune" ${p.fortune < 3 ? 'disabled' : ''}>${icon('fortune')}Fortune<small>3 jetons · ${p.fortune} en main</small></button>`;
-  $('getGrid').innerHTML = RES.map(r => `<button type="button" class="resbtn ${get_ === r ? 'sel' : ''}" data-r="${r}" ${st.bank[r] < 1 || r === give_ ? 'disabled' : ''}>${icon(r)}${RES_INFO[r].nom}<small>banque : ${st.bank[r]}</small></button>`).join('');
-  const rate = give_ === 'fortune' ? 3 : give_ ? rateFor(st, me, give_) : 0;
-  $('tradeSummary').innerHTML = give_ && get_ ? `<b>${rate}</b>${icon(give_)}<span class="arrow">➜</span><b>1</b>${icon(get_)}` : 'Choisissez quoi donner et quoi recevoir';
-  $('btnTrade').disabled = !(give_ && get_);
-  $('giveGrid').querySelectorAll('button').forEach(b => b.onclick = () => { give_ = b.dataset.r; if (get_ === give_) get_ = null; renderBank(); });
-  $('getGrid').querySelectorAll('button').forEach(b => b.onclick = () => { get_ = b.dataset.r; renderBank(); });
+/* ---------- Échanges : une seule section qui monte au-dessus de la barre ----------
+   On touche ses cartes pour remplir « Je donne », on choisit « Je veux », puis Joueurs (proposition à tous)
+   ou Banque (taux déjà défini : banque, crique, comptoir, Phare, marée ; ou 3 jetons de Fortune). */
+let give = {}, want = {}, tradeOpen = false, buildOpen = false, pickTurn = null;
+function clampPick(p) {
+  if (!p) { give = {}; return; }
+  for (const r of Object.keys(give)) { const max = r === 'fortune' ? p.fortune : p.res[r]; if (give[r] > max) give[r] = max; if (!give[r]) delete give[r]; }
 }
-/* ---------- Échanges entre joueurs ---------- */
-let tradeTab = 'players', offerGive = {}, offerWant = {};
-function setTab(t) {
-  tradeTab = t;
-  $('tabPlayers').classList.toggle('sel', t === 'players'); $('tabBank').classList.toggle('sel', t === 'bank');
-  $('paneP').hidden = t !== 'players'; $('paneB').hidden = t !== 'bank';
-  if (t === 'bank') renderBank(); else renderPick();
+function pickCard(r) {
+  const st = S(), me = myPid(); if (!st || !isMyTurn() || st.phase !== 'main' || waiting) return;
+  const p = st.players[me], max = r === 'fortune' ? p.fortune : p.res[r];
+  if (r === 'fortune') give = give.fortune ? {} : { fortune: Math.min(3, max) }; // les jetons de Fortune s'échangent seuls, par 3
+  else { delete give.fortune; give[r] = (give[r] || 0) + 1; if (give[r] > max) delete give[r]; } // au-delà de ce qu'on a, on repart de zéro
+  delete want[r];
+  renderHUD();
 }
-function renderPick() {
-  const st = S(), p = st.players[myPid()];
-  const row = (id, bundle, max) => {
-    $(id).innerHTML = RES.map(r => { const n = bundle[r] || 0; return `<div>${icon(r)}<span class="cnt ${n ? '' : 'zero'}">${n}</span>
-      <span class="pm"><button type="button" data-r="${r}" data-d="-1" ${n ? '' : 'disabled'} aria-label="Moins de ${RES_INFO[r].nom}">−</button><button type="button" data-r="${r}" data-d="1" ${n < max(r) ? '' : 'disabled'} aria-label="Plus de ${RES_INFO[r].nom}">+</button></span></div>`; }).join('');
-    $(id).querySelectorAll('button').forEach(b => b.onclick = () => {
-      const r = b.dataset.r; bundle[r] = Math.max(0, (bundle[r] || 0) + +b.dataset.d);
-      if (bundle[r] && bundle === offerGive) delete offerWant[r]; if (bundle[r] && bundle === offerWant) delete offerGive[r];
-      renderPick();
-    });
-  };
-  row('pickGive', offerGive, r => p.res[r]);
-  row('pickWant', offerWant, () => 9);
-  const ok = Object.values(offerGive).some(n => n > 0) && Object.values(offerWant).some(n => n > 0);
-  $('btnPropose').disabled = !ok;
-  $('btnPropose').textContent = st.players.length > 2 ? 'Proposer à tous' : 'Proposer';
+function bankDeal() {
+  const st = S(), me = myPid();
+  const g = Object.keys(give), w = Object.keys(want);
+  if (g.length !== 1) return { ok: false, label: g.length ? 'une seule ressource' : 'taux 4:1 à 2:1' };
+  const r = g[0], rate = r === 'fortune' ? 3 : rateFor(st, me, r);
+  if (give[r] !== rate) return { ok: false, label: `il en faut ${rate}` };
+  if (w.length !== 1 || want[w[0]] !== 1) return { ok: false, label: `${rate}:1 · voulez 1 carte` };
+  if (st.bank[w[0]] < 1) return { ok: false, label: 'banque vide' };
+  return { ok: true, label: `${rate} contre 1`, give: r, get: w[0] };
 }
-$('btnBank').onclick = () => { give_ = null; get_ = null; offerGive = {}; offerWant = {}; setTab('players'); showOverlay('bankOverlay'); };
-$('tabPlayers').onclick = () => setTab('players');
-$('tabBank').onclick = () => setTab('bank');
-$('btnTradeClose').onclick = hideOverlays;
-$('btnPropose').onclick = () => { const a = { t: 'offer', give: { ...offerGive }, want: { ...offerWant } }; hideOverlays(); act(a); };
-$('btnBankClose').onclick = hideOverlays;
+function renderTrade() {
+  const st = S();
+  const gk = Object.keys(give);
+  $('tpGive').innerHTML = gk.length ? gk.map(r => `<button type="button" class="chip" data-r="${r}" aria-label="Retirer une carte">${icon(r)}<span class="k">${give[r]}</span></button>`).join('') : '<span class="none">Touchez vos cartes en bas</span>';
+  $('tpGive').querySelectorAll('.chip').forEach(b => b.onclick = () => { const r = b.dataset.r; if (r === 'fortune' || !--give[r]) delete give[r]; renderHUD(); });
+  $('tpWant').innerHTML = RES.map(r => `<button type="button" class="chip ${want[r] ? '' : 'zero'}" data-r="${r}" ${give[r] ? 'disabled' : ''} aria-label="${RES_INFO[r].nom}">${icon(r)}${want[r] ? `<span class="k">${want[r]}</span>` : ''}</button>`).join('') +
+    (Object.keys(want).length ? '<button type="button" class="chip" id="wantClear" aria-label="Effacer">✕</button>' : '');
+  $('tpWant').querySelectorAll('.chip[data-r]').forEach(b => b.onclick = () => { const r = b.dataset.r; want[r] = ((want[r] || 0) % 4) + 1; renderTrade(); });
+  $('wantClear')?.addEventListener('click', () => { want = {}; renderTrade(); });
+  $('btnPropose').disabled = !(Object.keys(give).length && !give.fortune && Object.keys(want).length);
+  $('btnPropose').querySelector('small').textContent = st.players.length > 2 ? 'à tous' : 'proposer';
+  const d = bankDeal();
+  $('btnTrade').disabled = !d.ok; $('bankRate').textContent = d.label;
+}
+$('btnBank').onclick = () => { tradeOpen = !tradeOpen; buildOpen = false; uiMode = null; refreshAll(); };
+$('btnPropose').onclick = () => { const a = { t: 'offer', give: { ...give }, want: { ...want } }; give = {}; want = {}; tradeOpen = false; act(a); };
+$('btnTrade').onclick = () => { const d = bankDeal(); if (!d.ok) return; give = {}; want = {}; tradeOpen = false; act({ t: 'trade', give: d.give, get: d.get }); };
 const bundleIcons = b => Object.entries(b).map(([r, n]) => `<span class="x">${n}</span>${icon(r)}`).join(' ');
 /* Bandeau de la proposition en cours : vu par celui qui propose et par les autres */
 function renderOffer() {
@@ -438,7 +459,6 @@ function renderOffer() {
   } else panel.hidden = true;
   panel.dataset.id = o.id;
 }
-$('btnTrade').onclick = () => { if (!give_ || !get_) return; const a = { t: 'trade', give: give_, get: get_ }; hideOverlays(); act(a); };
 
 /* ---------- Menu de partie ---------- */
 function renderMenuTime() {
