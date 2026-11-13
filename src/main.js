@@ -8,6 +8,18 @@ import { spriteSheet, icon } from './icons.js';
 document.body.insertAdjacentHTML('afterbegin', spriteSheet());
 
 const $ = id => document.getElementById(id);
+/* ---------- iPhone et petits écrans : la page reste fixe ----------
+   Safari ignore « user-scalable=no » : on bloque nous-mêmes le pincement et le double-tap sur la page
+   (le plateau garde son propre zoom), on remet la page en place après le clavier, et on suit les
+   changements de taille de l'écran visible (barres de Safari, rotation). */
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
+// Le double-tap ne zoome plus grâce à « touch-action: manipulation » : les touchers rapides (−/+, cartes) restent tous pris en compte.
+const resetScroll = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); document.documentElement.scrollTop = document.body.scrollTop = 0; };
+document.addEventListener('focusout', e => { if (e.target.matches?.('input')) setTimeout(resetScroll, 60); });
+window.visualViewport?.addEventListener('resize', () => { resetScroll(); if (S()) fitHand(); });
+window.visualViewport?.addEventListener('scroll', () => { if ((window.visualViewport.scale || 1) <= 1.01) resetScroll(); });
+window.addEventListener('orientationchange', () => setTimeout(() => { resetScroll(); if (S()) fitHand(); }, 300));
 /* Version du build (injectée par scripts/build.mjs) : 'prod' ou 'preview' */
 const BUILD = typeof __BRUMES_BUILD__ !== 'undefined' ? __BRUMES_BUILD__ : { channel: 'prod', version: 'dev', date: new Date().toISOString(), sha: '' };
 const PREVIEW = BUILD.channel === 'preview';
@@ -505,7 +517,7 @@ $('costPanel').onclick = () => { costOpen = false; renderCosts(); };
 let tipTimer = 0;
 function showTip(html, x, y, ms = 2600, wide = false) {
   const tip = $('pieceTip');
-  tip.innerHTML = html; tip.classList.toggle('wide', wide);
+  tip.innerHTML = html; tip.classList.toggle('wide', wide); tip.classList.toggle('act', html.includes('tipBtn'));
   tip.style.left = `${Math.min(window.innerWidth - (wide ? 140 : 100), Math.max(wide ? 140 : 100, x))}px`; tip.style.top = `${Math.max(150, y)}px`;
   tip.hidden = false; tip.style.animation = 'none'; void tip.offsetWidth; tip.style.animation = '';
   clearTimeout(tipTimer); tipTimer = setTimeout(() => { tip.hidden = true; }, ms);
@@ -522,12 +534,28 @@ onInfo((kind, type, x, y) => {
   }
   showTip(html, x, y, 4500, true);
 });
+/* Toucher (ou appui long) une pièce posée : à qui elle est, ce qu'elle coûte, et directement de quoi construire */
 onLongPress((kind, id, x, y) => {
   const st = S(); if (!st) return;
   let k, owner;
   if (kind === 'vertex') { const b = st.vertices[id].building; k = b.type; owner = b.owner; } else { k = 'sentier'; owner = st.edges[id].road; }
-  const p = PIECES[k], who = st.players[owner];
-  showTip(`<b>${p.nom} de ${esc(who.nom)}</b><small>${p.pts}</small><div class="costs">${costIcons(st, k)}</div>`, x, y);
+  const p = PIECES[k], who = st.players[owner], me = myPid(), mineP = st.players[me];
+  const myTurn = isMyTurn() && !waiting && st.phase === 'main';
+  // Propositions : améliorer ce camp, ou construire le même type ailleurs
+  const offers = [];
+  if (kind === 'vertex' && k === 'camp' && owner === me) offers.push({ act: 'upgrade', label: 'Améliorer en bastion', kind: 'bastion', ok: myTurn && canBuild(st, me, 'bastion') && legalBastions(st, me).includes(id) });
+  const same = k === 'bastion' ? 'bastion' : k;
+  if (!(k === 'bastion' && owner === me && offers.length)) offers.push({ act: 'mode', label: { sentier: 'Tracer un sentier', camp: 'Poser un camp', bastion: 'Améliorer un camp' }[same], kind: same, ok: myTurn && canBuild(st, me, same) });
+  const missing = kd => mineP ? Object.entries(costOf(st, kd)).flatMap(([r, n]) => Array(Math.max(0, n - mineP.res[r])).fill(icon(r))).join('') : '';
+  const btns = offers.map((o, i) => o.ok
+    ? `<button type="button" class="mini yes tipBtn" data-i="${i}">${o.label}</button>`
+    : `<span class="tipNo">${o.label} : ${!myTurn ? 'pendant votre tour, après les dés' : missing(o.kind) ? `il manque ${missing(o.kind)}` : 'aucun emplacement libre'}</span>`).join('');
+  showTip(`<b>${p.nom} de ${esc(who.nom)}</b><small>${p.pts} · coûte</small><div class="costs">${costIcons(st, k)}</div>${mineP ? `<div class="tipActs">${btns}</div>` : ''}`, x, y, 5000, true);
+  $('pieceTip').querySelectorAll('.tipBtn').forEach(b => b.onclick = () => {
+    const o = offers[+b.dataset.i]; $('pieceTip').hidden = true;
+    if (o.act === 'upgrade') return act({ t: 'bastion', v: id });
+    uiMode = o.kind; buildOpen = false; refreshAll();
+  });
   try { navigator.vibrate?.(15); } catch { /* indisponible */ }
 });
 

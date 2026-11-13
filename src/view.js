@@ -40,6 +40,9 @@ export function initView(canvas) {
   markers = new THREE.Group(); scene.add(markers);
   setupInput(canvas);
   window.addEventListener('resize', layoutCamera);
+  window.visualViewport?.addEventListener('resize', layoutCamera); // barres de Safari, clavier, rotation
+  window.addEventListener('orientationchange', () => setTimeout(layoutCamera, 250));
+  if (window.ResizeObserver) new ResizeObserver(() => layoutCamera()).observe(canvas);
   layoutCamera();
   requestAnimationFrame(loop);
 }
@@ -644,14 +647,20 @@ export function playEvents(state, events) {
 
 /* ---------- Repères d'interaction ---------- */
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
-const glow = new THREE.MeshBasicMaterial({ color: '#ffd36e', transparent: true, opacity: 0.9, toneMapped: false }); // les emplacements restent bien vifs
+const glow = new THREE.MeshBasicMaterial({ color: '#fff3c4', transparent: true, opacity: 0.95, toneMapped: false, depthTest: false }); // les emplacements restent bien vifs
+const glowEdge = new THREE.MeshBasicMaterial({ color: '#10202b', transparent: true, opacity: 0.7, toneMapped: false, depthTest: false });
 /* Emplacements lumineux : une zone de toucher invisible par emplacement, et un seul dessin
    (maillage instancié) par forme, quel que soit leur nombre. */
+/* Chaque emplacement a un contour sombre dessous et une forme claire dessus : il ressort sur toutes les
+   couleurs de terrain, et il se dessine par-dessus le décor pour ne jamais être caché. */
 const markerGeo = {
-  ring: new THREE.RingGeometry(0.08, 0.14, 24).rotateX(-Math.PI / 2),
-  dot: new THREE.CircleGeometry(0.05, 16).rotateX(-Math.PI / 2),
-  bar: new THREE.BoxGeometry(0.55, 0.03, 0.08),
-  hex: new THREE.RingGeometry(0.78, 0.9, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
+  ring: new THREE.RingGeometry(0.09, 0.17, 28).rotateX(-Math.PI / 2),
+  dot: new THREE.CircleGeometry(0.065, 20).rotateX(-Math.PI / 2),
+  bar: new THREE.BoxGeometry(0.6, 0.04, 0.12),
+  hex: new THREE.RingGeometry(0.76, 0.9, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
+  ringO: new THREE.RingGeometry(0.06, 0.21, 28).rotateX(-Math.PI / 2),
+  barO: new THREE.BoxGeometry(0.68, 0.03, 0.2),
+  hexO: new THREE.RingGeometry(0.72, 0.94, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
   hitV: new THREE.SphereGeometry(0.3, 8, 6), hitE: new THREE.BoxGeometry(0.75, 0.3, 0.38), hitT: new THREE.CylinderGeometry(0.85, 0.85, 0.5, 6),
 };
 Object.values(markerGeo).forEach(g => { g.userData.shared = true; });
@@ -675,11 +684,15 @@ export function showMarkers(kind, ids, append = false) {
   // Dessins instanciés, refaits à partir de tous les emplacements affichés
   for (const o of markers.children.filter(o => o.isInstancedMesh)) { markers.remove(o); o.dispose(); }
   const groups = markers.children.filter(o => o.userData.vis);
+  const outlineOf = { ring: 'ringO', bar: 'barO', hex: 'hexO' };
   for (const shape of ['ring', 'dot', 'bar', 'hex']) {
     const list = groups.filter(o => o.userData.vis.includes(shape)); if (!list.length) continue;
-    const inst = new THREE.InstancedMesh(markerGeo[shape], glow, list.length);
-    list.forEach((o, i) => { o.updateMatrix(); inst.setMatrixAt(i, o.matrix); });
-    inst.raycast = () => {}; inst.frustumCulled = false; markers.add(inst);
+    for (const [geo, material, order] of [[outlineOf[shape], glowEdge, 20], [shape, glow, 21]]) {
+      if (!geo) continue;
+      const inst = new THREE.InstancedMesh(markerGeo[geo], material, list.length);
+      list.forEach((o, i) => { o.updateMatrix(); inst.setMatrixAt(i, o.matrix); });
+      inst.raycast = () => {}; inst.frustumCulled = false; inst.renderOrder = order; markers.add(inst);
+    }
   }
 }
 export function clearMarkers() { for (const o of markers.children) if (o.isInstancedMesh) o.dispose(); markers.clear(); }
@@ -706,8 +719,15 @@ function placeCamera(cam, z, p) {
   cam.updateProjectionMatrix(); cam.updateMatrixWorld();
   return dist;
 }
+/* Taille et position réelles du plateau à l'écran. Sur iPhone, window.innerWidth/innerHeight bougent avec
+   les barres de Safari et le zoom de page : on se fie toujours au rectangle du canvas, sinon les touchers
+   tombent à côté des emplacements. */
+let viewRect = { left: 0, top: 0, width: 1, height: 1 };
+function measure() { const r = renderer.domElement.getBoundingClientRect(); if (r.width > 0 && r.height > 0) viewRect = r; return viewRect; }
+const toNdc = (x, y, out) => { const r = viewRect; return out.set((x - r.left) / r.width * 2 - 1, -((y - r.top) / r.height) * 2 + 1); };
+export function relayout() { if (renderer) layoutCamera(); }
 function layoutCamera() {
-  const w = window.innerWidth, h = window.innerHeight;
+  const r = measure(), w = Math.round(r.width), h = Math.round(r.height);
   renderer.setSize(w, h, false); camera.aspect = w / h; probeCam.aspect = camera.aspect;
   const dist = placeCamera(camera, zoom, pan);
   scene.fog.near = dist * 1.05 / zoom; scene.fog.far = dist * 2.4 / zoom;
@@ -716,7 +736,7 @@ function layoutCamera() {
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _hit = new THREE.Vector3();
 function groundAt(x, y, z = zoomT, p = panT) {
   placeCamera(probeCam, z, p);
-  _ndc.set(x / window.innerWidth * 2 - 1, -(y / window.innerHeight) * 2 + 1);
+  toNdc(x, y, _ndc);
   _ray.setFromCamera(_ndc, probeCam);
   return _ray.ray.intersectPlane(ground, _hit) ? _hit.clone() : null;
 }
@@ -752,6 +772,7 @@ function setupInput(canvas) {
   let downAt = null, moved = false, pinch = null, lastMove = 0, lastTap = { t: 0, x: 0, y: 0 }, longTimer = 0, longFired = false;
   const mid = () => { const [a, b] = [...pointers.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) }; };
   canvas.addEventListener('pointerdown', e => {
+    measure();
     canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     vel.set(0, 0); dragging = true;
     if (pointers.size === 1) {
@@ -800,7 +821,7 @@ function setupInput(canvas) {
     if (!end(e) || moved || longFired) return;
     // Toucher simple : un emplacement lumineux d'abord
     if (markers.children.length) {
-      ndc.set(e.clientX / window.innerWidth * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+      measure(); toNdc(e.clientX, e.clientY, ndc);
       camera.updateMatrixWorld(); markers.updateMatrixWorld(true);
       ray.setFromCamera(ndc, camera);
       const hits = ray.intersectObjects(markers.children, true);
@@ -812,6 +833,8 @@ function setupInput(canvas) {
       let best = null, bd = 0.42;
       for (const p of view.portSpots) { const d = Math.hypot(p.x - gp.x, p.z - gp.z); if (d < bd) { bd = d; best = p; } }
       const c = S.tiles[S.center];
+      const piece = builtAt(e.clientX, e.clientY);
+      if (piece) { longPressHandler(piece.kind, piece.id, e.clientX, e.clientY); lastTap.t = 0; return; }
       if (best) infoHandler('port', best.type, e.clientX, e.clientY);
       else if (c && Math.hypot(c.x - gp.x, c.z - gp.z) < 0.5) infoHandler('phare', null, e.clientX, e.clientY);
       else if (seaTap(gp)) { lastTap.t = 0; return; }
@@ -1071,7 +1094,8 @@ function loop() {
     for (const gl of gulls) { const u = gl.userData; u.a += u.sp * dt; gl.position.set(Math.cos(u.a) * u.r * 1.6, u.h + Math.sin(time * 0.7 + u.r) * 0.1, Math.sin(u.a) * u.r); gl.rotation.y = -u.a - Math.PI; gl.children.forEach(c => { if (c.userData.sgn) c.rotation.x = Math.sin(time * 7 + u.r) * 0.5 * c.userData.sgn; }); }
     if (view.phare?.userData.halo) view.phare.userData.halo.material.opacity = 0.75 + Math.sin(time * 2.2) * 0.2;
   }
-  glow.opacity = 0.72 + Math.sin(time * 5) * 0.25;
+  const pulse = 0.5 + Math.sin(time * 5) * 0.5;
+  glow.opacity = 0.75 + pulse * 0.25; glow.color.setRGB(1, 0.86 + pulse * 0.14, 0.45 + pulse * 0.5); // passe du doré au blanc
   if (tweens.length) shadowsDirty = 2;
   if (shadowsDirty > 0) { renderer.shadowMap.needsUpdate = true; shadowsDirty--; }
   seaUniforms.uDeep.value.lerp(seaTarget, 0.04); seaUniforms.uTime.value = time;
@@ -1084,7 +1108,7 @@ function loop() {
 
 /* Pour les tests : position écran d'un repère */
 export function markerScreenPositions() {
-  return markers.children.filter(g => g.userData.kind).map(g => { const v = g.getWorldPosition(new THREE.Vector3()).project(camera); return { kind: g.userData.kind, id: g.userData.id, x: (v.x + 1) / 2 * window.innerWidth, y: (1 - v.y) / 2 * window.innerHeight }; });
+  return markers.children.filter(g => g.userData.kind).map(g => { const v = g.getWorldPosition(new THREE.Vector3()).project(camera); return { kind: g.userData.kind, id: g.userData.id, x: viewRect.left + (v.x + 1) / 2 * viewRect.width, y: viewRect.top + (1 - v.y) / 2 * viewRect.height }; });
 }
 
 export const debugScene = () => ({ scene, renderer, camera, sea, world, sun });

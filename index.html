@@ -2,7 +2,8 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
 <title>Brumes</title>
 <meta name="description" content="Jeu de colonisation au tour par tour sur un archipel dans la brume.">
 <meta name="theme-color" content="#0e2533">
@@ -39,7 +40,12 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; background: var(--sea); color: var(--ink); font-family: var(--body); font-weight: 600; overflow: hidden; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+/* Écran verrouillé comme une appli : la page ne défile pas, ne zoome pas et ne rebondit pas (iPhone compris) */
+html, body { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; margin: 0; background: var(--sea); color: var(--ink); font-family: var(--body); font-weight: 600; overflow: hidden; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input { -webkit-user-select: text; user-select: text; }
+button, a, input { touch-action: manipulation; }
+.sheet, .h-body, #costPanel { touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.mapRow { touch-action: pan-x; overscroll-behavior: contain; }
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 button, input { font-family: var(--body); color: var(--ink); font-weight: 700; }
 button { cursor: pointer; }
@@ -70,6 +76,11 @@ body.home #top, body.home #bottom, body.home .menuBtn, body.home #costPanel, bod
 #costPanel .note { font-size: 11px; color: #9fe0ff; }
 #pieceTip { position: fixed; z-index: 25; transform: translate(-50%, calc(-100% - 18px)); background: rgba(8, 18, 26, 0.95); border: 1px solid var(--line); border-radius: 12px; padding: 7px 11px; box-shadow: var(--shadow); white-space: nowrap; pointer-events: none; animation: toastIn 0.15s ease-out; }
 #pieceTip.wide { white-space: normal; width: 260px; }
+#pieceTip:has(.tipBtn), #pieceTip.act { pointer-events: auto; }
+.tipActs { display: grid; gap: 5px; margin-top: 7px; }
+.tipBtn { width: 100%; font-family: var(--display); font-weight: 500; font-size: 14px; padding: 8px; }
+.tipNo { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font-size: 11.5px; color: var(--ink-soft); }
+.tipNo .ico { width: 16px; height: 16px; }
 #pieceTip.wide small { display: block; line-height: 1.4; margin-top: 3px; font-size: 12px; }
 #pieceTip small.now { color: var(--lamp); font-weight: 800; }
 #pieceTip b { display: block; font-family: var(--display); font-weight: 500; font-size: 14px; }
@@ -345,6 +356,18 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 .h-nav .ico { width: 24px; height: 24px; opacity: 0.55; }
 .h-nav .on { color: var(--lamp); }
 .h-nav .on .ico { opacity: 1; }
+/* Écrans courts (iPhone SE, barres de Safari affichées) : tout plus compact pour que l'essentiel tienne */
+@media (max-height: 700px) {
+  .h-top { padding-top: calc(10px + var(--safe-top)); padding-bottom: 6px; }
+  .me-avatar { width: 40px; height: 40px; font-size: 18px; }
+  #nameInput { font-size: 18px; }
+  .mode { padding: 7px 10px; grid-template-columns: 44px 1fr; }
+  .mode .pic { width: 44px; height: 44px; border-radius: 12px; }
+  .mode .pic .ico { width: 28px; height: 28px; }
+  .mode b { font-size: 16px; }
+  .h-cta .big { padding: 12px; font-size: 18px; }
+  .sheet { padding: 14px 13px; gap: 10px; }
+}
 @media (prefers-reduced-motion: reduce) { .toast, .act.dice:not(:disabled) .bubble, .call.low, #dice.roll .die, #dice.land .die, .drop, .rcard.hit, #offerPanel { animation: none; } }
 </style>
 </head>
