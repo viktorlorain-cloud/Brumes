@@ -381,7 +381,7 @@ function autoPlay(st) {
   if (a) { if (uiMode && pid === myPid()) uiMode = null; hostApply(pid, a); }
 }
 /* Le Rôdeur surgit à l'écran de celui qui tarde à le placer (une fois par 7) */
-const SCARE_AFTER = 12000;
+const SCARE_AFTER = 10000; // 10 s d'hésitation, ou le temps du tour presque écoulé
 let robberKey = null, robberSince = 0, scared = null;
 function growl() {
   try {
@@ -405,9 +405,10 @@ function jumpScare() {
 }
 function watchRobber(st) {
   if (st.phase !== 'robber') { robberKey = null; return; }
-  const k = `${st.gameId}:${st.round}:${st.current}`;
+  const k = `${st.gameId}:${st.turnNo || 0}:${st.current}:${st.robber}`;
   if (k !== robberKey) { robberKey = k; robberSince = Date.now(); }
-  if (scared !== k && isMyTurn() && Date.now() - robberSince > SCARE_AFTER) { scared = k; jumpScare(); }
+  const left = st.turnTime && deadline ? deadline - Date.now() : Infinity;
+  if (scared !== k && isMyTurn() && (Date.now() - robberSince > SCARE_AFTER || left <= 4000)) { scared = k; jumpScare(); }
 }
 function tickTimer() {
   const st = S(); if (!st) return;
@@ -415,7 +416,11 @@ function tickTimer() {
   const left = renderTimer();
   if (left == null) return;
   if (left <= 10000 && left > 0 && !warned && isMyTurn()) { warned = true; toast('Plus que 10 secondes'); try { navigator.vibrate?.([60, 80, 60]); } catch { /* indisponible */ } }
-  if (left <= 0 && isReferee() && !waiting) autoPlay(st);
+  if (left <= 0 && isReferee() && !waiting) {
+    // Le Rôdeur surgit d'abord chez celui qui a laissé filer le temps, puis il est placé automatiquement
+    if (st.phase === 'robber' && isMyTurn() && scared !== robberKey) { scared = robberKey; jumpScare(); }
+    autoPlay(st);
+  }
 }
 setInterval(tickTimer, 250);
 function setTurnTime(v) {
