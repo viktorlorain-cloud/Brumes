@@ -401,7 +401,7 @@ function jumpScare() {
   document.body.classList.remove('shake'); void document.body.offsetWidth; document.body.classList.add('shake');
   growl();
   try { navigator.vibrate?.([120, 60, 200]); } catch { /* indisponible */ }
-  setTimeout(() => { el.hidden = true; document.body.classList.remove('shake'); }, 1650);
+  setTimeout(() => { el.hidden = true; document.body.classList.remove("shake"); }, 1750);
 }
 function watchRobber(st) {
   if (st.phase !== 'robber') { robberKey = null; return; }

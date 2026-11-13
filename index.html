@@ -90,12 +90,16 @@ body.home #top, body.home #bottom, body.home .menuBtn, body.home #costPanel, bod
 #pieceTip::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: rgba(8, 18, 26, 0.95); }
 
 /* Le Rôdeur surgit quand on tarde à le placer */
-#scare { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; align-content: center; gap: 10px; pointer-events: none; background: radial-gradient(circle at 50% 45%, rgba(60, 20, 90, 0.55), rgba(0, 0, 0, 0.92) 70%); animation: scareBg 1.6s ease-out forwards; }
-#scare .scare-face { animation: scareFace 1.6s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; filter: drop-shadow(0 0 30px rgba(170, 90, 255, 0.8)); }
-#scare .scare-face .ico { width: 62vmin; height: 62vmin; }
-#scare b { font-family: var(--display); font-weight: 600; font-size: 24px; color: #e6d4ff; text-shadow: 0 2px 12px #000; animation: scareTxt 1.6s ease-out forwards; }
+#scare { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; align-content: center; gap: 10px; pointer-events: none; background: radial-gradient(circle at 50% 42%, rgba(120, 10, 30, 0.55), rgba(0, 0, 0, 0.96) 68%); animation: scareBg 1.7s ease-out forwards; }
+#scare::before { content: ""; position: absolute; inset: 0; background: #ff2a1a; mix-blend-mode: screen; animation: scareFlash 1.7s steps(1, end) forwards; }
+#scare .scare-face { position: relative; animation: scareFace 1.7s cubic-bezier(0.15, 1.7, 0.35, 1) forwards; filter: drop-shadow(0 0 40px rgba(255, 60, 30, 0.55)); }
+#scare .scare-face svg { width: 92vmin; height: auto; max-height: 72vh; display: block; }
+#scare .sg-eyes { animation: scareEyes 0.18s steps(2, end) 4; transform-origin: 100px 108px; }
+@keyframes scareFlash { 0% { opacity: 0; } 6% { opacity: 0.55; } 10% { opacity: 0; } 16% { opacity: 0.35; } 20%, 100% { opacity: 0; } }
+@keyframes scareEyes { 50% { opacity: 0.25; } }
+#scare b { position: relative; font-family: var(--display); font-weight: 600; font-size: 26px; color: #ffd9cf; letter-spacing: 0.02em; text-shadow: 0 2px 12px #000; animation: scareTxt 1.6s ease-out forwards; }
 @keyframes scareBg { 0% { opacity: 0; } 8% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes scareFace { 0% { transform: scale(0.1) rotate(-20deg); } 18% { transform: scale(1.15) rotate(4deg); } 24% { transform: scale(1) translate(-6px, 3px); } 30% { transform: translate(7px, -4px); } 36% { transform: translate(-5px, 2px); } 42% { transform: translate(0, 0); } 80% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes scareFace { 0% { transform: scale(0.05) rotate(-25deg); } 14% { transform: scale(1.25) rotate(5deg); } 24% { transform: scale(1) translate(-6px, 3px); } 30% { transform: translate(7px, -4px); } 36% { transform: translate(-5px, 2px); } 42% { transform: translate(0, 0); } 80% { transform: scale(1.05); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
 @keyframes scareTxt { 0%, 20% { opacity: 0; transform: translateY(10px); } 35% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
 body.shake #scene { animation: shake 0.45s linear; }
 @keyframes shake { 20% { transform: translate(-8px, 4px); } 40% { transform: translate(7px, -5px); } 60% { transform: translate(-5px, 3px); } 80% { transform: translate(4px, -2px); } }
@@ -384,7 +388,20 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
 <div id="costPanel" hidden></div>
 <div id="pieceTip" hidden></div>
 <div id="toasts" aria-live="polite"></div>
-<div id="scare" hidden><div class="scare-face"><svg class="ico" aria-hidden="true"><use href="#i-voleur"/></svg></div><b>Le Rôdeur s'impatiente…</b></div>
+<div id="scare" hidden><div class="scare-face"><svg viewBox="0 0 200 220" aria-hidden="true">
+  <defs>
+    <radialGradient id="sg-eye" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff6c8"/><stop offset=".35" stop-color="#ffcf3a"/><stop offset=".7" stop-color="#ff4b1f"/><stop offset="1" stop-color="#ff4b1f" stop-opacity="0"/></radialGradient>
+    <radialGradient id="sg-in" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#2a0d33"/><stop offset="1" stop-color="#050208"/></radialGradient>
+    <linearGradient id="sg-hood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b2a6e"/><stop offset="1" stop-color="#140820"/></linearGradient>
+  </defs>
+  <path d="M100 6 C40 10 14 70 16 120 C18 170 6 196 0 220 L200 220 C194 196 182 170 184 120 C186 70 160 10 100 6 Z" fill="url(#sg-hood)"/>
+  <path d="M100 38 C58 40 40 86 42 122 C44 158 70 186 100 188 C130 186 156 158 158 122 C160 86 142 40 100 38 Z" fill="url(#sg-in)"/>
+  <g class="sg-eyes"><ellipse cx="74" cy="108" rx="22" ry="15" fill="url(#sg-eye)"/><ellipse cx="126" cy="108" rx="22" ry="15" fill="url(#sg-eye)"/>
+  <ellipse cx="74" cy="108" rx="7" ry="9" fill="#fff8de"/><ellipse cx="126" cy="108" rx="7" ry="9" fill="#fff8de"/>
+  <path d="M52 94 L94 102" stroke="#050208" stroke-width="7" stroke-linecap="round"/><path d="M148 94 L106 102" stroke="#050208" stroke-width="7" stroke-linecap="round"/></g>
+  <path d="M62 146 Q100 176 138 146 Q132 168 100 172 Q68 168 62 146 Z" fill="#12030f"/>
+  <path d="M64 147 L72 160 L80 150 L88 165 L96 152 L104 166 L112 152 L120 164 L128 150 L136 158 L138 146 Q100 170 64 147 Z" fill="#f3ead6"/>
+</svg></div><b>Le Rôdeur s'impatiente…</b></div>
 <div id="dice"><div class="die" id="d1"></div><div class="die" id="d2"></div></div>
 <div id="hint"><span id="hintText"></span></div>
 <div id="offerPanel" hidden></div>
