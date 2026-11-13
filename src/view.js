@@ -1006,10 +1006,9 @@ function leap(obj, x, z, dir, len = 1.4, h = 0.75, dur = 1.25) {
     obj.rotation.z = Math.cos(k * Math.PI) * 0.9; // nez vers le haut puis vers le bas
   }, () => { world.remove(obj); splash(x + dx * len, z + dz * len, 0.9); });
 }
-export function dolphinAt(x, z) {
-  const dir = Math.random() * Math.PI * 2;
+export function dolphinAt(x, z, dir = Math.random() * Math.PI * 2, pair = Math.random() < 0.5) {
   leap(makeDolphin(), x - Math.cos(dir) * 0.55, z - Math.sin(dir) * 0.55, dir);
-  if (Math.random() < 0.5) setTimeout(() => leap(makeDolphin(), x - Math.cos(dir) * 0.35 + 0.18, z - Math.sin(dir) * 0.35 + 0.18, dir, 1, 0.45, 1.05), 260);
+  if (pair) setTimeout(() => leap(makeDolphin(), x - Math.cos(dir) * 0.35 + 0.18, z - Math.sin(dir) * 0.35 + 0.18, dir, 1, 0.45, 1.05), 260);
 }
 const boats = [];
 function placeBoats() {
@@ -1040,18 +1039,24 @@ function updateSeaLife(dt, time) {
 }
 let nextDolphin = 4;
 /* Toucher la mer : bateau touché → il tangue et un poisson saute ; sinon un dauphin */
+/* Les animations déclenchées par un joueur sont envoyées aux autres : tout le monde voit le même dauphin */
+let fxHandler = () => {};
+export function onSeaFx(fn) { fxHandler = fn; }
+export function playSeaFx(fx) {
+  if (!S || !view) return;
+  if (fx.k === 'boat') {
+    const b = boats[fx.i]; if (!b) return;
+    b.userData.hop = 1; splash(b.position.x, b.position.z, 1.2);
+    leap(makeFish(), b.position.x + Math.cos(fx.dir) * 0.2, b.position.z + Math.sin(fx.dir) * 0.2, fx.dir, 0.5, 0.4, 0.8);
+  } else if (fx.k === 'dolphin') dolphinAt(fx.x, fx.z, fx.dir, fx.pair);
+}
 function seaTap(p) {
   if (!S) return false;
   if (S.tiles.some(t => Math.hypot(t.x - p.x, t.z - p.z) < 0.95)) return false;
-  for (const b of boats) {
-    if (Math.hypot(b.position.x - p.x, b.position.z - p.z) < 0.45) {
-      b.userData.hop = 1; splash(b.position.x, b.position.z, 1.2);
-      const dir = Math.random() * Math.PI * 2;
-      leap(makeFish(), b.position.x + Math.cos(dir) * 0.2, b.position.z + Math.sin(dir) * 0.2, dir, 0.5, 0.4, 0.8);
-      return true;
-    }
-  }
-  dolphinAt(p.x, p.z);
+  let fx = null;
+  boats.forEach((b, i) => { if (!fx && Math.hypot(b.position.x - p.x, b.position.z - p.z) < 0.45) fx = { k: 'boat', i, dir: Math.random() * Math.PI * 2 }; });
+  if (!fx) fx = { k: 'dolphin', x: +p.x.toFixed(2), z: +p.z.toFixed(2), dir: +(Math.random() * Math.PI * 2).toFixed(2), pair: Math.random() < 0.5 };
+  playSeaFx(fx); fxHandler(fx);
   return true;
 }
 

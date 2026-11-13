@@ -1,7 +1,7 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, DEV_INFO, publicVp, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, SIZES, generateIsland } from './engine.js';
-import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers } from './view.js';
+import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers, onSeaFx, playSeaFx } from './view.js';
 import { openRoom, preloadNet } from './net.js';
 import { spriteSheet, icon } from './icons.js';
 
@@ -476,6 +476,13 @@ for (const [id, m] of [['btnSentier', 'sentier'], ['btnCamp', 'camp'], ['btnBast
 $('btnBuild').onclick = () => { buildOpen = !buildOpen; tradeOpen = false; if (!buildOpen) uiMode = null; refreshAll(); };
 $('tideChip').onclick = () => { const st = S(); if (!st) return; const t = st.tide || st.nextTide; if (t) toast(`${st.tide ? '' : 'Au prochain tour : '}${tideDesc(t)}`, 4500); };
 $('btnMenu').onclick = () => openMenu();
+/* Dauphins et bateaux : ce qu'un joueur déclenche, les autres le voient aussi (au plus 3 par seconde) */
+let fxTimes = [];
+onSeaFx(fx => {
+  if (session?.mode !== 'online' || !session.room || !session.state) return;
+  const now = Date.now(); fxTimes = fxTimes.filter(t => now - t < 1000); if (fxTimes.length >= 3) return; fxTimes.push(now);
+  session.room.send({ type: 'fx', from: ME.id, gameId: session.state.gameId, fx });
+});
 
 /* ---------- Coûts de construction : carte en haut à droite et appui long sur une pièce posée ---------- */
 const PIECES = {
@@ -839,6 +846,7 @@ function onMessage(m) {
     onNewState(st, m.events || [], sequential);
     return;
   }
+  if (m.type === 'fx' && session.state && m.from !== ME.id && m.gameId === session.state.gameId) { playSeaFx(m.fx); return; }
   if (m.type === 'claim' && session.isHost && session.state) {
     const st = session.state, q = st.players[m.pid];
     if (!q) return;
