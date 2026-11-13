@@ -118,6 +118,23 @@ body.shake #scene { animation: shake 0.45s linear; }
 .pc.away { opacity: 0.45; }
 .pc-head { background: rgba(255, 255, 255, 0.06); }
 .pc-head { display: flex; align-items: center; gap: 5px; padding: 3px 5px 3px 3px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--c) 28%, transparent); }
+.av { display: inline-block; flex: none; width: 30px; height: 30px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.4); }
+.av svg { width: 100%; height: 100%; display: block; border-radius: 50%; }
+.avw { position: relative; flex: none; display: block; margin: 2px 4px 2px 1px; }
+.avw .av { width: 32px; height: 32px; }
+.avw .vp { position: absolute; right: -6px; bottom: -4px; width: 18px; height: 18px; font-size: 11px; border: 1.5px solid #fff; }
+/* Proposition d'échange : qui donne quoi, avec l'avatar de chacun */
+.trade2 { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: stretch; }
+.trade2 .side { display: grid; justify-items: center; gap: 4px; padding: 8px 6px; border-radius: 12px; text-align: center; }
+.trade2 .side.give { background: rgba(255, 122, 102, 0.12); border: 1px solid rgba(255, 122, 102, 0.4); }
+.trade2 .side.get { background: rgba(92, 200, 90, 0.12); border: 1px solid rgba(92, 200, 90, 0.45); }
+.trade2 .side .av { width: 38px; height: 38px; }
+.trade2 .lbl { font-size: 12px; color: var(--ink-soft); }
+.trade2 .res { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; font-family: var(--display); font-weight: 600; }
+.trade2 .res .ico { width: 24px; height: 24px; }
+.trade2 .arrows { align-self: center; font-size: 22px; color: var(--lamp); }
+.trade2 .who2 { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-3); font-family: var(--display); font-weight: 600; color: var(--ink-soft); }
+#offerPanel .who .av { width: 26px; height: 26px; }
 .vp { width: 23px; height: 23px; flex: none; border-radius: 50%; background: var(--c); display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 13.5px; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
 .pc-head b { font-family: var(--display); font-weight: 500; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pc.me .pc-head b { color: var(--lamp); }

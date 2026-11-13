@@ -420,10 +420,13 @@ function roadMesh(eid, pid, fromVid) {
   const startV = fromVid != null ? fromVid : e.v[0];
   const endV = e.v[0] === startV ? e.v[1] : e.v[0];
   const a = vpos(startV, TOP + 0.03), b = vpos(endV, TOP + 0.03), len = a.distanceTo(b);
-  const geo = new THREE.BoxGeometry(len * 0.74, 0.07, 0.15); geo.translate(len * 0.37, 0, 0);
+  // Sentier lisible sur tous les terrains : bordure blanche, contour sombre, cœur à la couleur du joueur
+  const geo = new THREE.BoxGeometry(len * 0.74, 0.09, 0.15); geo.translate(len * 0.37, 0.01, 0);
   const col = S.players[pid].col;
-  const road = shadowed(new THREE.Mesh(geo, mat(col, { emissive: col, emissiveIntensity: 0.25 })));
-  const edge = new THREE.Mesh(geo, outlineMat); edge.scale.set(1.02, 1.25, 1.35); road.add(edge);
+  const road = shadowed(new THREE.Mesh(geo, mat(col, { emissive: col, emissiveIntensity: 0.3 })));
+  const casingGeo = new THREE.BoxGeometry(len * 0.78, 0.07, 0.24); casingGeo.translate(len * 0.37, -0.005, 0);
+  const casing = new THREE.Mesh(casingGeo, mat('#fbf6ea')); road.add(casing);
+  const edge = new THREE.Mesh(casingGeo, outlineMat); edge.scale.set(1.03, 1.2, 1.28); road.add(edge);
   const dir = b.clone().sub(a).normalize();
   road.position.copy(a.clone().add(dir.clone().multiplyScalar(len * 0.13)));
   road.rotation.y = Math.atan2(-dir.z, dir.x);
@@ -649,6 +652,8 @@ export function playEvents(state, events) {
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 const glow = new THREE.MeshBasicMaterial({ color: '#fff3c4', transparent: true, opacity: 0.95, toneMapped: false, depthTest: false }); // les emplacements restent bien vifs
 const glowEdge = new THREE.MeshBasicMaterial({ color: '#10202b', transparent: true, opacity: 0.7, toneMapped: false, depthTest: false });
+const glowTile = new THREE.MeshBasicMaterial({ color: '#fff3c4', transparent: true, opacity: 0.85, toneMapped: false, depthWrite: false });
+const glowEdgeTile = new THREE.MeshBasicMaterial({ color: '#10202b', transparent: true, opacity: 0.55, toneMapped: false, depthWrite: false });
 /* Emplacements lumineux : une zone de toucher invisible par emplacement, et un seul dessin
    (maillage instancié) par forme, quel que soit leur nombre. */
 /* Chaque emplacement a un contour sombre dessous et une forme claire dessus : il ressort sur toutes les
@@ -657,10 +662,10 @@ const markerGeo = {
   ring: new THREE.RingGeometry(0.09, 0.17, 28).rotateX(-Math.PI / 2),
   dot: new THREE.CircleGeometry(0.065, 20).rotateX(-Math.PI / 2),
   bar: new THREE.BoxGeometry(0.6, 0.04, 0.12),
-  hex: new THREE.RingGeometry(0.76, 0.9, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
+  hex: new THREE.RingGeometry(0.8, 0.88, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
   ringO: new THREE.RingGeometry(0.06, 0.21, 28).rotateX(-Math.PI / 2),
   barO: new THREE.BoxGeometry(0.68, 0.03, 0.2),
-  hexO: new THREE.RingGeometry(0.72, 0.94, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
+  hexO: new THREE.RingGeometry(0.77, 0.91, 6, 1, Math.PI / 2).rotateX(-Math.PI / 2),
   hitV: new THREE.SphereGeometry(0.3, 8, 6), hitE: new THREE.BoxGeometry(0.75, 0.3, 0.38), hitT: new THREE.CylinderGeometry(0.85, 0.85, 0.5, 6),
 };
 Object.values(markerGeo).forEach(g => { g.userData.shared = true; });
@@ -687,7 +692,8 @@ export function showMarkers(kind, ids, append = false) {
   const outlineOf = { ring: 'ringO', bar: 'barO', hex: 'hexO' };
   for (const shape of ['ring', 'dot', 'bar', 'hex']) {
     const list = groups.filter(o => o.userData.vis.includes(shape)); if (!list.length) continue;
-    for (const [geo, material, order] of [[outlineOf[shape], glowEdge, 20], [shape, glow, 21]]) {
+    const onTile = shape === 'hex'; // contour de tuile (Rôdeur) : sous les maisons, jamais par-dessus
+    for (const [geo, material, order] of [[outlineOf[shape], onTile ? glowEdgeTile : glowEdge, 20], [shape, onTile ? glowTile : glow, 21]]) {
       if (!geo) continue;
       const inst = new THREE.InstancedMesh(markerGeo[geo], material, list.length);
       list.forEach((o, i) => { o.updateMatrix(); inst.setMatrixAt(i, o.matrix); });
@@ -1106,6 +1112,7 @@ function loop() {
   }
   const pulse = 0.5 + Math.sin(time * 5) * 0.5;
   glow.opacity = 0.75 + pulse * 0.25; glow.color.setRGB(1, 0.86 + pulse * 0.14, 0.45 + pulse * 0.5); // passe du doré au blanc
+  glowTile.color.copy(glow.color); glowTile.opacity = 0.6 + pulse * 0.35;
   if (tweens.length) shadowsDirty = 2;
   if (shadowsDirty > 0) { renderer.shadowMap.needsUpdate = true; shadowsDirty--; }
   seaUniforms.uDeep.value.lerp(seaTarget, 0.04); seaUniforms.uTime.value = time;

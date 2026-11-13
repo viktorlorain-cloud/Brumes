@@ -4,7 +4,7 @@ import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, DEV_INFO, public
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers, onSeaFx, playSeaFx, setLeftInset } from './view.js';
 import { openRoom, preloadNet } from './net.js';
 import { scare3D, scareFrame } from './scare3d.js';
-import { spriteSheet, icon } from './icons.js';
+import { spriteSheet, icon, avatar } from './icons.js';
 
 document.body.insertAdjacentHTML('afterbegin', spriteSheet());
 
@@ -101,7 +101,7 @@ function plateHTML(st, q, me, online) {
   const mine = online ? q.id === me : false;
   const pieces = k => LIMITS[k] - (q.built?.[k] || 0);
   return `<div class="pc ${active ? 'active' : ''} ${away ? 'away' : ''} ${mine ? 'me' : ''}" data-pid="${q.id}" style="--c:${q.col}">
-    <div class="pc-head"><span class="vp" title="Points de victoire">${mine || (session.mode === 'local' && q.id === st.current) ? vp(q) : publicVp(q)}</span><b>${esc(q.nom)}</b></div>
+    <div class="pc-head"><span class="avw">${avatar(q.id, q.col)}<span class="vp" title="Points de victoire">${mine || (session.mode === 'local' && q.id === st.current) ? vp(q) : publicVp(q)}</span></span><b>${esc(q.nom)}</b></div>
     <div class="pc-row"><span title="Cartes en main">${icon('carte')}${total(q)}</span><span title="Cartes mystères">${'<span class="qmini">?</span>'}${(q.dev || []).length}</span><span title="Jetons de Fortune">${icon('fortune')}${q.fortune}</span></div>
     <div class="pc-row bonus"><span class="${q.chemin ? 'held' : ''}" title="Plus long sentier${q.chemin ? ' · Grand Chemin (+2)' : ''}">${icon('sentier')}${q.roadLen || 0}</span><span class="${q.rodeur ? 'held' : ''}" title="Éclaireurs joués${q.rodeur ? ' · Maître du Rôdeur (+2)' : ''}">${icon('voleur')}${q.knights || 0}</span></div>
     <div class="pc-row pieces"><span title="Sentiers restants">${icon('sentier')}${pieces('sentier')}</span><span title="Camps restants">${icon('camp')}${pieces('camp')}</span><span title="Bastions restants">${icon('bastion')}${pieces('bastion')}</span></div>
@@ -696,16 +696,25 @@ function renderOffer() {
       else if (r === 'decline') right = '<span class="st">refuse</span>';
       else if (local) right = can ? `<button type="button" class="mini yes" data-acc="${q.id}">${esc(q.nom)} accepte</button>` : '<span class="st">n’a pas les cartes</span>';
       else right = `<span class="st">${can ? 'réfléchit…' : 'n’a pas les cartes'}</span>`;
-      return `<div><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}</b><span class="st"></span>${right}</div>`;
+      return `<div>${avatar(q.id, q.col)}<b>${esc(q.nom)}</b><span class="st"></span>${right}</div>`;
     }).join('');
-    panel.innerHTML = `<div class="deal"><span>${local ? esc(from.nom) + ' donne' : 'Vous donnez'}</span>${bundleIcons(o.give)}<span>contre</span>${bundleIcons(o.want)}</div>
+    panel.innerHTML = `<div class="trade2">
+        <div class="side give">${avatar(from.id, from.col)}<span class="lbl">${local ? esc(from.nom) + ' donne' : 'Vous donnez'}</span><span class="res">${bundleIcons(o.give)}</span></div>
+        <div class="arrows">⇄</div>
+        <div class="side get"><span class="who2">?</span><span class="lbl">${local ? esc(from.nom) + ' reçoit' : 'Vous recevez'}</span><span class="res">${bundleIcons(o.want)}</span></div>
+      </div>
       <div class="who">${rows}</div><button type="button" class="mini no" id="btnCancelOffer">Annuler la proposition</button>`;
     panel.querySelectorAll('[data-with]').forEach(b => b.onclick = () => act({ t: 'confirmOffer', id: o.id, with: +b.dataset.with }));
     panel.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => hostApply(+b.dataset.acc, { t: 'respond', id: o.id, accept: true }));
     $('btnCancelOffer').onclick = () => act({ t: 'cancelOffer' });
   } else if (me >= 0) {
     const r = o.responses[me], can = canPay(st.players[me], o.want);
-    panel.innerHTML = `<div class="deal"><span class="dot" style="background:${from.col}"></span><b>${esc(from.nom)}</b><span>donne</span>${bundleIcons(o.give)}<span>contre</span>${bundleIcons(o.want)}</div>` +
+    const meP = st.players[me];
+    panel.innerHTML = `<div class="trade2">
+        <div class="side get">${avatar(from.id, from.col)}<span class="lbl">${esc(from.nom)} vous donne</span><span class="res">${bundleIcons(o.give)}</span></div>
+        <div class="arrows">⇄</div>
+        <div class="side give">${avatar(meP.id, meP.col)}<span class="lbl">Vous lui donnez</span><span class="res">${bundleIcons(o.want)}</span></div>
+      </div>` +
       (r ? `<div class="deal"><span class="st">${r === 'accept' ? `Vous avez accepté. ${esc(from.nom)} choisit avec qui échanger…` : 'Vous avez refusé.'}</span></div>`
          : `<div class="row2"><button type="button" class="mini no" id="btnDecline">Refuser</button><button type="button" class="mini yes" id="btnAccept" ${can ? '' : 'disabled'}>${can ? 'Accepter' : 'Cartes manquantes'}</button></div>`);
     if (!r) { $('btnDecline').onclick = () => act({ t: 'respond', id: o.id, accept: false }); $('btnAccept').onclick = () => act({ t: 'respond', id: o.id, accept: true }); }
@@ -810,7 +819,7 @@ function renderLobby() {
   const cap = l.max || MAX_PLAYERS, min = l.min || 2;
   $('lobbyCode').textContent = l.code;
   $('lobbyMode').textContent = `${MODES[l.mode]?.nom || 'Partie'} · ${MAPS.find(x => x.id === l.map)?.nom || "L'Archipel"} · ${SIZES.find(x => x.id === l.size)?.nom || 'Normale'}`;
-  $('lobbySeats').innerHTML = l.seats.map((s, i) => `<li><span class="dot" style="background:${PLAYER_DEFS[i].col}"></span><b>${esc(s.name)}</b>${s.clientId === l.hostId ? '<small>hôte</small>' : ''}${s.clientId === ME.id ? '<small>vous</small>' : ''}${session.peers.has(s.clientId) ? '' : '<small class="off">hors ligne</small>'}</li>`).join('') +
+  $('lobbySeats').innerHTML = l.seats.map((s, i) => `<li>${avatar(i, PLAYER_DEFS[i].col)}<b>${esc(s.name)}</b>${s.clientId === l.hostId ? '<small>hôte</small>' : ''}${s.clientId === ME.id ? '<small>vous</small>' : ''}${session.peers.has(s.clientId) ? '' : '<small class="off">hors ligne</small>'}</li>`).join('') +
     Array.from({ length: Math.max(0, cap - l.seats.length) }, () => '<li class="free"><span class="dot"></span>Place libre</li>').join('');
   const host = session.isHost;
   $('btnLaunch').style.display = host ? '' : 'none';
@@ -898,7 +907,7 @@ function renderClaim() {
   if (!need) { ov.classList.remove('show'); return; }
   const rows = st.players.map(q => {
     const on = session.peers.has(q.clientId);
-    return `<button type="button" class="seat ${on ? 'on' : ''}" data-pid="${q.id}" ${on ? 'disabled' : ''}><span class="dot" style="background:${q.col}"></span><b>${esc(q.nom)}</b><small>${on ? 'connecté' : 'déconnecté · reprendre'}</small></button>`;
+    return `<button type="button" class="seat ${on ? 'on' : ''}" data-pid="${q.id}" ${on ? 'disabled' : ''}>${avatar(q.id, q.col)}<b>${esc(q.nom)}</b><small>${on ? 'connecté' : 'déconnecté · reprendre'}</small></button>`;
   }).join('');
   if ($('claimList').dataset.html === rows) { if (!ov.classList.contains('show')) ov.classList.add('show'); return; }
   $('claimList').innerHTML = rows; $('claimList').dataset.html = rows;

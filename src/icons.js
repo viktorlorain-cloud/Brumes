@@ -53,3 +53,58 @@ export function iconImage(name) {
   }
   return imgCache.get(name);
 }
+
+/* ---------- Avatars des joueurs ----------
+   Un animal de l'archipel par place, sur un rond à la couleur du joueur :
+   Corail le crabe, Lagon la tortue, Ambre le renard, Indigo la chouette, Azur le dauphin, Rose la flamante. */
+const AV_INK = '#1b1424';
+const AVATARS = [
+  // Crabe
+  `<path d="M14 21 L11 12 M34 21 L37 12" stroke="${AV_INK}" stroke-width="2.4" stroke-linecap="round"/>
+   <circle cx="11" cy="11" r="4.2" fill="#fff" stroke="${AV_INK}" stroke-width="2"/><circle cx="37" cy="11" r="4.2" fill="#fff" stroke="${AV_INK}" stroke-width="2"/>
+   <circle cx="11.8" cy="11.5" r="1.9" fill="${AV_INK}"/><circle cx="36.2" cy="11.5" r="1.9" fill="${AV_INK}"/>
+   <path d="M3 26 a5.5 5.5 0 1 1 9 4 l-3 -3 z" fill="#ff8a70" stroke="${AV_INK}" stroke-width="2" stroke-linejoin="round"/>
+   <path d="M45 26 a5.5 5.5 0 1 0 -9 4 l3 -3 z" fill="#ff8a70" stroke="${AV_INK}" stroke-width="2" stroke-linejoin="round"/>
+   <ellipse cx="24" cy="30" rx="14" ry="10" fill="#ff8a70" stroke="${AV_INK}" stroke-width="2.4"/>
+   <path d="M18 31 q6 5 12 0" fill="none" stroke="${AV_INK}" stroke-width="2.2" stroke-linecap="round"/>
+   <circle cx="15" cy="27" r="2" fill="#ffc2b3"/><circle cx="33" cy="27" r="2" fill="#ffc2b3"/>`,
+  // Tortue
+  `<path d="M8 38 a16 11 0 0 1 32 0 z" fill="#3d8a4a" stroke="${AV_INK}" stroke-width="2.4" stroke-linejoin="round"/>
+   <path d="M16 38 l3 -7 h10 l3 7 M19 31 l-5 -2 M29 31 l5 -2" fill="none" stroke="#9fd38a" stroke-width="2"/>
+   <circle cx="24" cy="19" r="10" fill="#9be3a0" stroke="${AV_INK}" stroke-width="2.4"/>
+   <circle cx="20" cy="18" r="2.3" fill="${AV_INK}"/><circle cx="28" cy="18" r="2.3" fill="${AV_INK}"/>
+   <circle cx="20.7" cy="17.2" r=".8" fill="#fff"/><circle cx="28.7" cy="17.2" r=".8" fill="#fff"/>
+   <path d="M20 23 q4 3 8 0" fill="none" stroke="${AV_INK}" stroke-width="2" stroke-linecap="round"/>`,
+  // Renard
+  `<path d="M9 9 L18 15 L24 13 L30 15 L39 9 L37 24 L30 36 L24 40 L18 36 L11 24 Z" fill="#ff9b3d" stroke="${AV_INK}" stroke-width="2.4" stroke-linejoin="round"/>
+   <path d="M12 13 L16 16 L13 20 Z M36 13 L32 16 L35 20 Z" fill="#ffd9b0"/>
+   <path d="M13 26 L24 30 L35 26 L30 35 L24 39 L18 35 Z" fill="#fff4e6"/>
+   <circle cx="19" cy="23" r="2.3" fill="${AV_INK}"/><circle cx="29" cy="23" r="2.3" fill="${AV_INK}"/>
+   <circle cx="19.7" cy="22.2" r=".8" fill="#fff"/><circle cx="29.7" cy="22.2" r=".8" fill="#fff"/>
+   <ellipse cx="24" cy="33" rx="2.6" ry="2" fill="${AV_INK}"/>`,
+  // Chouette
+  `<path d="M12 13 L16 6 L20 12 M36 13 L32 6 L28 12" fill="#8f78f0" stroke="${AV_INK}" stroke-width="2.2" stroke-linejoin="round"/>
+   <ellipse cx="24" cy="27" rx="15" ry="15" fill="#b9a7ff" stroke="${AV_INK}" stroke-width="2.4"/>
+   <path d="M15 37 q9 6 18 0" fill="#d9cfff"/>
+   <circle cx="18" cy="23" r="6.5" fill="#fff" stroke="${AV_INK}" stroke-width="2"/><circle cx="30" cy="23" r="6.5" fill="#fff" stroke="${AV_INK}" stroke-width="2"/>
+   <circle cx="18.6" cy="23.4" r="3.2" fill="${AV_INK}"/><circle cx="29.4" cy="23.4" r="3.2" fill="${AV_INK}"/>
+   <circle cx="19.6" cy="22.2" r="1" fill="#fff"/><circle cx="30.4" cy="22.2" r="1" fill="#fff"/>
+   <path d="M21.5 29 L24 34 L26.5 29 Z" fill="#ffb347" stroke="${AV_INK}" stroke-width="1.6" stroke-linejoin="round"/>`,
+  // Dauphin
+  `<path d="M7 30 C7 16 20 9 31 12 C37 14 41 19 42 24 L46 25 C45 28 42 29 39 29 C35 36 24 40 15 38 C10 37 7 34 7 30 Z" fill="#8ec9ff" stroke="${AV_INK}" stroke-width="2.4" stroke-linejoin="round"/>
+   <path d="M20 12 L24 4 L29 12" fill="#5fa8ea" stroke="${AV_INK}" stroke-width="2.2" stroke-linejoin="round"/>
+   <path d="M12 32 C18 37 30 36 38 29" fill="none" stroke="#e6f4ff" stroke-width="4" stroke-linecap="round"/>
+   <circle cx="30" cy="21" r="2.4" fill="${AV_INK}"/><circle cx="30.8" cy="20.2" r=".8" fill="#fff"/>
+   <path d="M33 27 q4 1 7 -1" fill="none" stroke="${AV_INK}" stroke-width="2" stroke-linecap="round"/>`,
+  // Flamante
+  `<path d="M15 44 C13 34 18 30 21 27 C24 24 23 20 20 19" fill="none" stroke="#ff8fbf" stroke-width="5" stroke-linecap="round"/>
+   <path d="M15 44 C13 34 18 30 21 27 C24 24 23 20 20 19" fill="none" stroke="${AV_INK}" stroke-width="1.6" stroke-linecap="round" opacity=".35"/>
+   <circle cx="24" cy="16" r="9" fill="#ffb3d1" stroke="${AV_INK}" stroke-width="2.4"/>
+   <path d="M31 14 L41 18 L37 24 L31 19 Z" fill="#fff" stroke="${AV_INK}" stroke-width="2" stroke-linejoin="round"/>
+   <path d="M37 24 L41 18 L39 23 Z" fill="${AV_INK}"/>
+   <circle cx="25" cy="14" r="2.3" fill="${AV_INK}"/><circle cx="25.8" cy="13.2" r=".8" fill="#fff"/>
+   <circle cx="20" cy="19" r="2" fill="#ff8fbf"/>`,
+];
+export function avatar(i, col, cls = 'av') {
+  return `<span class="${cls}" style="--c:${col}"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="24" fill="${col}"/><circle cx="24" cy="24" r="21" fill="rgba(255,255,255,.22)"/>${AVATARS[i % AVATARS.length]}</svg></span>`;
+}
