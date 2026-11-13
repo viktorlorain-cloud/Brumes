@@ -3,10 +3,13 @@ import * as THREE from 'three';
 import { RES, RES_INFO, PIPS } from './engine.js';
 import { iconImage } from './icons.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 let S = null;
-const FOG_COL = new THREE.Color('#6d8594');
-const SEA_BASE = new THREE.Color('#123447');
+const FOG_COL = new THREE.Color('#9fb3bf');
+/* Couleurs des terrains sur le plateau : plus franches que celles de l'interface, pour la lumière de jour */
+const TILE_COL = { bois: '#3c9a3e', pierre: '#e0703f', lin: '#93d24c', grain: '#f4b935', cristal: '#8f98b0' };
+const SEA_BASE = new THREE.Color('#0f86b4'); // lagon en plein jour
 const TOP = 0.15;
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -17,17 +20,19 @@ let tapHandler = () => {};
 
 export function initView(canvas) {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12; // couleurs plus riches, lumières plus douces
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.98; // couleurs plus riches, lumières plus douces
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false; // les ombres ne sont recalculées que quand quelque chose bouge sur l'île
   scene = new THREE.Scene();
-  scene.background = new THREE.Color('#0e2533');
-  scene.fog = new THREE.Fog('#0e2533', 13, 26);
+  scene.background = new THREE.Color('#7cc8e6');
+  scene.fog = new THREE.Fog('#7cc8e6', 13, 26);
   camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
-  scene.add(new THREE.HemisphereLight('#d6ecff', '#1d2f3a', 1.0));
-  sun = new THREE.DirectionalLight('#ffe3bd', 1.7);
+  // Lumière de film d'animation : ciel clair, rebond chaud du sol, soleil doré et contre-jour bleuté
+  scene.add(new THREE.HemisphereLight('#eaf7ff', '#8a6a44', 1.05));
+  const rimLight = new THREE.DirectionalLight('#9fd4ff', 0.9); rimLight.position.set(-6, 5, -8); scene.add(rimLight);
+  sun = new THREE.DirectionalLight('#fff0d2', 2.4);
   sun.position.set(4, 10, 5); sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 30 });
@@ -68,16 +73,25 @@ function builtAt(x, y) {
    Une couleur passée en objet THREE.Color donne un matériau propre, qu'on peut animer. */
 const matCache = new Map();
 const mat = (c, o = {}) => {
-  if (typeof c !== 'string') return new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 0.85, ...o });
+  if (typeof c !== 'string') return new THREE.MeshStandardMaterial({ color: c, flatShading: false, roughness: 0.6, ...o });
   const key = c + JSON.stringify(o, (k, v) => (v && v.isColor ? v.getHexString() : v));
   let m = matCache.get(key);
-  if (!m) { m = new THREE.MeshStandardMaterial({ color: c, flatShading: true, roughness: 0.85, ...o }); m.userData.shared = true; matCache.set(key, m); }
+  if (!m) { m = new THREE.MeshStandardMaterial({ color: c, flatShading: false, roughness: 0.6, ...o }); m.userData.shared = true; matCache.set(key, m); }
   return m;
 };
+/* Hexagone aux arêtes arrondies (pointe vers le nord), de y0 à y0 + épaisseur + 2 x arrondi */
+function roundedHex(r, depth, bevel, y0) {
+  const sh = new THREE.Shape();
+  for (let i = 0; i < 6; i++) { const a = Math.PI / 2 + i * Math.PI / 3, x = Math.cos(a) * r, y = Math.sin(a) * r; if (i) sh.lineTo(x, y); else sh.moveTo(x, y); }
+  sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3, curveSegments: 1 });
+  geo.rotateX(-Math.PI / 2); geo.translate(0, y0 + bevel, 0); geo.computeVertexNormals(); geo.userData.shared = true;
+  return geo;
+}
 /* Fusionne les pièces fixes d'un groupe : une seule géométrie par matériau, donc un seul dessin.
    Les pièces marquées userData.keep (animées, à part) et les maillages instanciés restent tels quels. */
 const _inv = new THREE.Matrix4(), _rel = new THREE.Matrix4();
-const bakedMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 }); bakedMat.userData.shared = true;
+const bakedMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: false, roughness: 0.55 }); bakedMat.userData.shared = true;
 const _col = new THREE.Color();
 /* bake : les pièces opaques de couleurs différentes deviennent une seule géométrie colorée par sommet
    (un dessin pour toute une construction au lieu d'un par couleur) */
@@ -178,6 +192,15 @@ function scaled(g, f) { const outer = new THREE.Group(); g.scale.setScalar(f); o
    de la ressource est posée contre le jeton numéroté (elle reste cachée tant que la tuile est dans la brume). */
 function at(obj, x, y, z, ry = 0) { obj.position.set(x, y, z); obj.rotation.y = ry; return obj; }
 function slot(rad, a) { return [Math.cos(a) * rad, Math.sin(a) * rad]; }
+/* Arbre rond et dodu, comme dans les films d'animation : tronc court, feuillage en boules */
+function puffTree(s, col, k) {
+  const g = new THREE.Group();
+  g.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.03 * s, 0.045 * s, 0.16 * s, 8), mat('#7a4e2c'))), 0, 0.08 * s, 0));
+  const light = new THREE.Color(col).offsetHSL(0.02, 0.05, 0.08).getStyle();
+  const balls = [[0, 0.24, 0, 0.13], [0.07, 0.2, 0.04, 0.09], [-0.07, 0.21, -0.03, 0.095], [0.01, 0.33, -0.01, 0.085]];
+  balls.forEach(([x, y, z, r], i) => g.add(at(shadowed(new THREE.Mesh(new THREE.IcosahedronGeometry(r * s, 1), mat(i === 3 || (i + k) % 3 === 0 ? light : col))), x * s, y * s, z * s)));
+  return g;
+}
 function pine(s, col) {
   const g = new THREE.Group();
   g.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.025 * s, 0.035 * s, 0.12 * s, 5), mat('#6b4a2e'))), 0, 0.06 * s, 0));
@@ -236,7 +259,7 @@ function makeDecor(terrain, rot) {
     for (let i = 0; i < 9; i++) {
       const a = rot + i / 9 * Math.PI * 2; if (Math.abs(Math.sin(a) + 1) < 0.18) continue;
       const [x, z] = slot(0.6 + (i % 2) * 0.12, a);
-      g.add(at(pine(0.85 + ((i * 37) % 5) / 10, i % 3 ? '#2f6b3b' : '#3d8a4a'), x, 0, z));
+      g.add(at(i % 3 === 1 ? pine(0.85 + ((i * 37) % 5) / 10, '#2f7f3a') : puffTree(0.9 + ((i * 37) % 5) / 12, i % 2 ? '#2f8a3a' : '#45a83f', i), x, 0, z));
     }
     const logs = new THREE.Group();
     [[-0.06, 0.04], [0.06, 0.04], [0, 0.11]].forEach(([x, y]) => logs.add(at(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.26, 8), mat('#8a5a34'))), x, y, 0)));
@@ -244,7 +267,7 @@ function makeDecor(terrain, rot) {
     const [lx, lz] = slot(0.42, rot + 2.6); g.add(at(logs, lx, 0, lz, rot));
   } else if (terrain === 'pierre') {
     // Carrière : piles de blocs taillés, gros rochers et une paroi entaillée
-    const block = (c) => shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, 0.1), mat(c)));
+    const block = (c) => shadowed(new THREE.Mesh(new RoundedBoxGeometry(0.14, 0.08, 0.1, 2, 0.018), mat(c)));
     for (let k = 0; k < 3; k++) {
       const [x, z] = slot(0.58, rot + k * 2.1);
       const pile = new THREE.Group();
@@ -260,7 +283,7 @@ function makeDecor(terrain, rot) {
     // Champs de lin : rangs de tiges vertes à fleurs bleues, et une botte liée
     for (let k = 0; k < 2; k++) {
       const a = rot + k * Math.PI, [x, z] = slot(0.55, a);
-      const p = field(0.44, 0.3, 5, 9, '#6e5a3a', '#6f9a44', new THREE.SphereGeometry(0.02, 6, 4), '#6f9cff', 0.14);
+      const p = field(0.44, 0.3, 5, 9, '#6e5a3a', '#6f9a44', new THREE.OctahedronGeometry(0.022, 0), '#6f9cff', 0.14);
       g.add(at(p, x, 0, z, -a + Math.PI / 2));
     }
     const [bx, bz] = slot(0.6, rot + Math.PI / 2);
@@ -272,7 +295,7 @@ function makeDecor(terrain, rot) {
     // Champs de blé dorés en rangs, meule de foin et petit moulin
     for (let k = 0; k < 2; k++) {
       const a = rot + k * 2.3, [x, z] = slot(0.56, a);
-      const ear = new THREE.CapsuleGeometry(0.012, 0.035, 2, 4);
+      const ear = new THREE.ConeGeometry(0.016, 0.06, 4); // épi léger : 8 triangles
       g.add(at(field(0.44, 0.32, 6, 10, '#8a6a34', '#d9a83a', ear, k ? '#f6cf55' : '#ecc04a', 0.15), x, 0, z, -a + Math.PI / 2));
     }
     const [hx, hz] = slot(0.6, rot + 4.4);
@@ -288,8 +311,10 @@ function makeDecor(terrain, rot) {
     // Montagnes enneigées et grappes de cristaux lumineux
     [[0.58, rot], [0.62, rot + 2.2], [0.55, rot + 4.1]].forEach(([rad, a], i) => {
       const [x, z] = slot(rad, a), h = 0.42 + i * 0.09;
-      g.add(at(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.27, h, 5), mat('#6f7a8f'))), x, h / 2, z));
-      g.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.2, 5), mat('#eef3f8')), x, h - 0.08, z));
+      // Montagne arrondie, sommet enneigé tout rond
+      const peak = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.27, h, 24, 4), mat('#a3abc0'))); g.add(at(peak, x, h / 2, z));
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat('#f7fbff')); cap.scale.set(1.05, 0.9, 1.05); g.add(at(cap, x, h - 0.14, z));
+      const capCone = new THREE.Mesh(new THREE.ConeGeometry(0.104, 0.15, 24), mat('#f7fbff')); g.add(at(capCone, x, h - 0.075, z));
     });
     const cmat = mat('#7ff0ff', { emissive: '#1aa6c4', emissiveIntensity: 0.9, roughness: 0.2 });
     for (let k = 0; k < 3; k++) {
@@ -357,7 +382,7 @@ function outlined(mesh, k = 1.12) {
 }
 function gableRoof(w, h, d, color) {
   const shape = new THREE.Shape(); shape.moveTo(-w / 2, 0); shape.lineTo(w / 2, 0); shape.lineTo(0, h); shape.lineTo(-w / 2, 0);
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: false }); geo.translate(0, 0, -d / 2);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: d - 0.03, bevelEnabled: true, bevelSize: 0.015, bevelThickness: 0.015, bevelSegments: 3 }); geo.translate(0, 0, -(d - 0.03) / 2);
   return outlined(shadowed(new THREE.Mesh(geo, mat(color, { emissive: color, emissiveIntensity: 0.18 }))), 1.1);
 }
 function basePlate(color, r) {
@@ -379,7 +404,7 @@ function makeFlag(color, h) {
 function makeTent(color) {
   const g = new THREE.Group();
   g.add(basePlate(color, 0.2));
-  const body = outlined(shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.15, 0.17), mat('#efe3c8'))), 1.1);
+  const body = outlined(shadowed(new THREE.Mesh(new RoundedBoxGeometry(0.2, 0.15, 0.17, 3, 0.03), mat('#f6ead2'))), 1.08);
   body.position.y = 0.11; g.add(body);
   const roof = gableRoof(0.26, 0.15, 0.21, color); roof.position.y = 0.185; g.add(roof);
   const door = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.08), mat('#4a3322')); door.position.set(0, 0.075, 0.086); g.add(door);
@@ -392,13 +417,13 @@ function makeTent(color) {
 function makeBastion(color) {
   const g = new THREE.Group();
   g.add(basePlate(color, 0.25));
-  const base = outlined(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.18, 0.38, 10), mat('#d9d0bc'))), 1.08);
+  const base = outlined(shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.18, 0.38, 24), mat('#e6dcc6'))), 1.06);
   base.position.y = 0.21; g.add(base);
-  for (let i = 0; i < 8; i++) { const [x, z] = ringPos(i, 8, 0.15); const m = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.05), mat('#cfc4ad'))); m.position.set(x, 0.43, z); g.add(m); }
-  const roof = outlined(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 10), mat(color, { emissive: color, emissiveIntensity: 0.18 }))), 1.1);
+  for (let i = 0; i < 8; i++) { const [x, z] = ringPos(i, 8, 0.15); const m = shadowed(new THREE.Mesh(new RoundedBoxGeometry(0.055, 0.065, 0.055, 2, 0.012), mat('#d9cfb8'))); m.position.set(x, 0.43, z); g.add(m); }
+  const roof = outlined(shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.28, 24), mat(color, { emissive: color, emissiveIntensity: 0.18 }))), 1.08);
   roof.position.y = 0.55; g.add(roof);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.162, 0.17, 0.05, 10), mat(color, { emissive: color, emissiveIntensity: 0.3 })); band.position.y = 0.2; g.add(band);
-  const wing = outlined(shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.14), mat('#e6dcc6'))), 1.1); wing.position.set(0.15, 0.09, 0.05); g.add(wing);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.162, 0.17, 0.05, 24), mat(color, { emissive: color, emissiveIntensity: 0.3 })); band.position.y = 0.2; g.add(band);
+  const wing = outlined(shadowed(new THREE.Mesh(new RoundedBoxGeometry(0.16, 0.14, 0.14, 3, 0.025), mat('#efe5cf'))), 1.08); wing.position.set(0.15, 0.09, 0.05); g.add(wing);
   const wroof = gableRoof(0.19, 0.09, 0.16, color); wroof.position.set(0.15, 0.16, 0.05); g.add(wroof);
   const flag = makeFlag(color, 0.3); flag.position.y = 0.66; g.add(flag); g.userData.flag = flag.userData.flag;
   mergeStatic(g, true);
@@ -443,12 +468,15 @@ export function buildView(state) {
   shadowsDirty = 3;
   view = { portSpots: [], tiles: [], vertexObjs: new Map(), roadObjs: new Map(), robber: null, phare: null, gameId: S.gameId };
   const statics = []; // tout ce qui ne bouge plus : fusionné en quelques dessins à la fin
+  const tileGeo = { dirt: roundedHex(0.9, 0.16, 0.06, -0.2), top: roundedHex(0.86, 0.035, 0.05, TOP - 0.135) };
   const sandGeo = new THREE.CylinderGeometry(1.1, 1.16, 0.12, 6);
   for (const t of S.tiles) {
     const g = new THREE.Group(); g.position.set(t.x, 0, t.z);
     // Tuile visible : matériau partagé (fusionnable) ; tuile dans la brume : matériau propre, animé à la révélation
-    const col = t.terrain === 'phare' ? '#cbbf9f' : (t.revealed ? RES_INFO[t.terrain].col : FOG_COL.clone());
-    const base = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.965, 1.0, 0.3, 6), mat(col)));
+    const col = t.terrain === 'phare' ? '#f1dca6' : (t.revealed ? TILE_COL[t.terrain] : FOG_COL.clone());
+    // Tuile façon « gâteau » : un socle de terre aux bords arrondis, et le terrain posé dessus comme un glaçage
+    const dirt = shadowed(new THREE.Mesh(tileGeo.dirt, mat('#a8774a'))); g.add(dirt); statics.push(dirt);
+    const base = shadowed(new THREE.Mesh(tileGeo.top, mat(col)));
     g.add(base);
     const rot = (t.id * 1.7) % (Math.PI * 2);
     const top = new THREE.Group(); top.position.y = TOP; g.add(top);
@@ -529,7 +557,7 @@ function renderSnow() {
 export const viewGameId = () => view?.gameId;
 export function setState(state) { S = state; }
 export function setTide(type) {
-  const col = { abondance: '#1f5a4a', disette: '#3a3a35', haut: '#4a4220', bas: '#2f2a48', tempete: '#3c5566' }[type];
+  const col = { abondance: '#0f9a8a', disette: '#5d7f8c', haut: '#2a8fb0', bas: '#3b6fb0', tempete: '#4f7488' }[type];
   seaTarget = new THREE.Color(col || SEA_BASE);
 }
 
@@ -613,7 +641,7 @@ function animateBastion(ev) {
 function animateReveal(ids) {
   ids.forEach((id, i) => {
     const v = view.tiles[id], t = S.tiles[id];
-    const from = v.base.material.color.clone(), to = new THREE.Color(RES_INFO[t.terrain].col);
+    const from = v.base.material.color.clone(), to = new THREE.Color(TILE_COL[t.terrain]);
     const fog = v.fog; v.lifting = true; if (v.decor) v.decor.visible = true;
     tween(0.8, k => {
       v.base.material.color.lerpColors(from, to, k);
@@ -867,7 +895,7 @@ function setupInput(canvas) {
    Un seul dessin pour toute la mer : couleur des fonds selon la distance à la côte (carte des distances
    calculée une fois par île), vaguelettes animées, reflets du soleil, écume qui ourle la côte. */
 const seaUniforms = {
-  uTime: { value: 0 }, uDeep: { value: SEA_BASE.clone() }, uShallow: { value: new THREE.Color('#237891') },
+  uTime: { value: 0 }, uDeep: { value: SEA_BASE.clone() }, uShallow: { value: new THREE.Color('#3fe0d8') },
   uSdf: { value: null }, uHalf: { value: 12 }, uSun: { value: new THREE.Vector3(4, 10, 5).normalize() },
 };
 function makeSeaMaterial() {
