@@ -3,6 +3,7 @@ import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, DEV_INFO, public
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, SIZES, generateIsland } from './engine.js';
 import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers, onSeaFx, playSeaFx } from './view.js';
 import { openRoom, preloadNet } from './net.js';
+import { scare3D, scareFrame } from './scare3d.js';
 import { spriteSheet, icon } from './icons.js';
 
 document.body.insertAdjacentHTML('afterbegin', spriteSheet());
@@ -396,6 +397,9 @@ function growl() {
 }
 function jumpScare() {
   const el = $('scare'); el.hidden = false;
+  // Le Rôdeur en 3D ; si le téléphone ne peut pas ouvrir un second rendu 3D, on montre le dessin
+  const ok = scare3D($('scareCanvas'));
+  el.querySelector('.fallback').hidden = ok;
   el.querySelectorAll('*').forEach(n => { n.style.animation = 'none'; void n.offsetWidth; n.style.animation = ''; });
   el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
   document.body.classList.remove('shake'); void document.body.offsetWidth; document.body.classList.add('shake');
@@ -1029,4 +1033,4 @@ if (params.get('partie')) $('codeInput').focus();
 (window.requestIdleCallback || (f => setTimeout(f, 1500)))(() => preloadNet());
 
 /* Accès pour les tests automatiques */
-window.__brumes = { get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads, setTurnTime, debugScene };
+window.__brumes = { scareFrame: t => { $('scare').hidden = false; scareFrame($('scareCanvas'), t); }, get session() { return session; }, ME, markerScreenPositions, act, hostApply, legalCamps, legalRoads, setTurnTime, debugScene };
