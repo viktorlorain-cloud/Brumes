@@ -726,9 +726,14 @@ let viewRect = { left: 0, top: 0, width: 1, height: 1 };
 function measure() { const r = renderer.domElement.getBoundingClientRect(); if (r.width > 0 && r.height > 0) viewRect = r; return viewRect; }
 const toNdc = (x, y, out) => { const r = viewRect; return out.set((x - r.left) / r.width * 2 - 1, -((y - r.top) / r.height) * 2 + 1); };
 export function relayout() { if (renderer) layoutCamera(); }
+/* Sur ordinateur, la colonne des joueurs occupe la gauche : on décale le plateau vers la droite pour le centrer dans l'espace libre */
+let leftInset = 0;
+export function setLeftInset(px) { if (Math.abs(px - leftInset) > 1) { leftInset = px; if (renderer) layoutCamera(); } }
 function layoutCamera() {
   const r = measure(), w = Math.round(r.width), h = Math.round(r.height);
   renderer.setSize(w, h, false); camera.aspect = w / h; probeCam.aspect = camera.aspect;
+  const shift = Math.round(leftInset / 2);
+  for (const c of [camera, probeCam]) { if (shift) c.setViewOffset(w, h, -shift, 0, w, h); else c.clearViewOffset(); }
   const dist = placeCamera(camera, zoom, pan);
   scene.fog.near = dist * 1.05 / zoom; scene.fog.far = dist * 2.4 / zoom;
 }

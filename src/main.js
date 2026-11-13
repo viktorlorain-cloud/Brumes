@@ -1,7 +1,7 @@
 /* Interface, salons et synchronisation de la partie */
 import { RES, RES_INFO, PLAYER_DEFS, MAX_PLAYERS, PIPS, LIMITS, DEV_INFO, publicVp, createGame, applyAction, tideTitle, tideDesc, isWeather, total, vp, costOf, canBuild, canBuildOutOfTurn, canPay, tidesLeft,
   legalCamps, legalRoads, legalBastions, legalRobber, rateFor, randomDiscard, MAPS, SIZES, generateIsland } from './engine.js';
-import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers, onSeaFx, playSeaFx } from './view.js';
+import { initView, buildView, playEvents, showMarkers, clearMarkers, onTap, onLongPress, onInfo, viewGameId, resetCamera, markerScreenPositions, debugScene, refreshNumbers, onSeaFx, playSeaFx, setLeftInset } from './view.js';
 import { openRoom, preloadNet } from './net.js';
 import { scare3D, scareFrame } from './scare3d.js';
 import { spriteSheet, icon } from './icons.js';
@@ -13,6 +13,20 @@ const $ = id => document.getElementById(id);
    Safari ignore « user-scalable=no » : on bloque nous-mêmes le pincement et le double-tap sur la page
    (le plateau garde son propre zoom), on remet la page en place après le clavier, et on suit les
    changements de taille de l'écran visible (barres de Safari, rotation). */
+/* Échelle de l'interface : 1 sur téléphone, plus grande sur tablette et ordinateur */
+function applyUiScale() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const k = Math.max(1, Math.min(1.9, Math.min(w / 430, h / 620)));
+  document.documentElement.style.setProperty('--ui', k.toFixed(3));
+  requestAnimationFrame(updateInset);
+}
+const columnMode = window.matchMedia('(min-width: 900px) and (min-aspect-ratio: 1/1)');
+function updateInset() {
+  const on = columnMode.matches && !document.body.classList.contains('home');
+  try { setLeftInset(on ? $('top').getBoundingClientRect().right : 0); } catch { /* plateau pas encore prêt */ }
+}
+applyUiScale();
+window.addEventListener('resize', () => { applyUiScale(); if (typeof S === 'function' && S()) fitHand(); });
 for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
 // Le double-tap ne zoome plus grâce à « touch-action: manipulation » : les touchers rapides (−/+, cartes) restent tous pris en compte.
@@ -294,6 +308,7 @@ $('btnDiscard').onclick = () => {
 function onNewState(state, events, sequential) {
   session.state = state;
   document.body.classList.remove('home');
+  requestAnimationFrame(updateInset);
   const pk = `${state.gameId}:${state.round}:${state.current}`;
   if (pk !== pickTurn) { pickTurn = pk; give = {}; want = {}; tradeOpen = false; buildOpen = false; }
   syncTimer(state);
@@ -741,7 +756,7 @@ function leave() {
   session = null; uiMode = null; waiting = false;
   clearMarkers(); hint('');
 }
-function goHome() { document.body.classList.add('home'); renderHome(); showOverlay('homeOverlay'); }
+function goHome() { document.body.classList.add('home'); requestAnimationFrame(updateInset); renderHome(); showOverlay('homeOverlay'); }
 
 async function connect(code, isHost, fallbackState = null) {
   session = { mode: 'online', code, isHost, lobby: null, state: null, peers: new Set([ME.id]), room: null };

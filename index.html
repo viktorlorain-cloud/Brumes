@@ -169,19 +169,19 @@ body.shake #scene { animation: shake 0.45s linear; }
 /* Bas de l'écran, organisé comme le jeu de base : la main à gauche, trois boutons à droite */
 #bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 8px calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; pointer-events: none; }
 .bar { display: flex; align-items: flex-end; gap: 8px; min-width: 0; pointer-events: auto; }
-#hand { flex: 1 1 0; min-width: 0; display: flex; gap: 0; align-items: flex-end; min-height: 64px; padding: 10px 2px 4px 8px; overflow: hidden; }
+#hand { flex: 1 1 0; min-width: 0; display: flex; gap: 0; align-items: flex-end; min-height: 72px; padding: 10px 2px 4px 8px; overflow: hidden; }
 .empty { font-size: 12px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; white-space: nowrap; }
 #hand > * + * { margin-left: var(--gap, 8px); } /* marge négative possible : les piles se chevauchent */
 /* Une pile par ressource : plus on a de cartes, plus la pile est épaisse et son ombre grande (--k = nombre de cartes) */
-.rcard { position: relative; flex: none; width: 38px; height: 52px; padding: 0; border: 0; border-radius: 8px; background-color: var(--rc); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 100%); display: grid; place-items: center; box-shadow: var(--stack, 0 0 0 transparent), 0 calc(3px + var(--k, 1) * 1px) calc(8px + var(--k, 1) * 2px) rgba(0, 0, 0, 0.42), inset 0 0 0 1.5px rgba(255, 255, 255, 0.3); cursor: default; -webkit-appearance: none; appearance: none; }
+.rcard { position: relative; flex: none; width: 44px; height: 60px; padding: 0; border: 0; border-radius: 8px; background-color: var(--rc); background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 100%); display: grid; place-items: center; box-shadow: var(--stack, 0 0 0 transparent), 0 calc(3px + var(--k, 1) * 1px) calc(8px + var(--k, 1) * 2px) rgba(0, 0, 0, 0.42), inset 0 0 0 1.5px rgba(255, 255, 255, 0.3); cursor: default; -webkit-appearance: none; appearance: none; }
 .rcard.pickable { cursor: pointer; }
-.rcard .ico { width: 27px; height: 27px; }
+.rcard .ico { width: 31px; height: 31px; }
 .rcard .n { position: absolute; top: -9px; left: -7px; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 11px; background: #0b1a25; color: #fff; border: 1.5px solid rgba(255, 255, 255, 0.6); display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; }
 .rcard .sel { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); min-width: 22px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--lamp); color: #2a1d05; display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 11.5px; }
 .rcard.picked { box-shadow: 0 0 0 2.5px var(--lamp), 0 4px 10px rgba(0, 0, 0, 0.35); }
 .rcard.r-bois { --rc: #3d7a46; } .rcard.r-pierre { --rc: #c0683c; } .rcard.r-lin { --rc: #98b957; }
 .rcard.r-grain { --rc: #dfac45; } .rcard.r-cristal { --rc: #7c879e; }
-.rcard.coin { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3a4a58, #17252f); }
+.rcard.coin { width: 42px; height: 42px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3a4a58, #17252f); }
 .rcard.hit { animation: hit 0.4s ease-out; }
 @keyframes hit { 40% { transform: translateY(-6px) scale(1.12); } }
 .drop { position: fixed; z-index: 30; pointer-events: none; display: flex; align-items: center; gap: 2px; animation: drop 1s cubic-bezier(0.25, 1.25, 0.5, 1) forwards; }
@@ -373,6 +373,24 @@ details ul { padding-left: 18px; margin: 8px 0 0; display: grid; gap: 4px; }
   .mode b { font-size: 16px; }
   .h-cta .big { padding: 12px; font-size: 18px; }
   .sheet { padding: 14px 13px; gap: 10px; }
+}
+/* Grands écrans (ordinateur, tablette) : toute l'interface grandit avec l'écran (--ui calculé selon la taille).
+   Sur téléphone --ui vaut 1 : rien ne change. */
+#top, #bottom, .menuBtn, #costPanel, #offerPanel, #hint, .sheet, .h-top, .h-tabs, .h-body, .h-cta, .h-nav, #toasts > .toast { zoom: var(--ui, 1); }
+#pieceTip { transform: translate(-50%, calc(-100% - 18px)) scale(var(--ui, 1)); transform-origin: 50% 100%; }
+
+/* Ordinateur et tablette à l'horizontale : les joueurs en colonne à gauche, comme dans le jeu de base sur ordinateur,
+   pour laisser toute la place au plateau ; panneaux d'échange et de construction à droite, pas en pleine largeur. */
+@media (min-width: 900px) and (min-aspect-ratio: 1/1) {
+  #top { right: auto; width: 270px; }
+  #bankBar { margin-right: 0; }
+  #players { grid-template-columns: 1fr !important; margin-right: 0; gap: 8px; }
+  #players .pc .call, #players .pc:first-child .call, #players .pc:last-child .call { left: calc(100% + 10px); right: auto; top: 50%; transform: translateY(-50%); }
+  #players .pc .call::before, #players .pc:first-child .call::before, #players .pc:last-child .call::before { left: -6px; right: auto; top: 50%; margin: -6px 0 0; border: 6px solid transparent; border-left: 0; border-right-color: var(--c); }
+  #players.six .pc-row.pieces { display: flex; }
+  #tideChip { justify-self: start; margin-top: 4px; }
+  #tradePanel, #buildPanel { justify-self: end; width: 560px; }
+  #offerPanel { left: auto; right: 8px; width: 460px; }
 }
 @media (prefers-reduced-motion: reduce) { .toast, .act.dice:not(:disabled) .bubble, .call.low, #dice.roll .die, #dice.land .die, .drop, .rcard.hit, #offerPanel { animation: none; } }
 </style>
